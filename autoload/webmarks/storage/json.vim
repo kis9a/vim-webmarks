@@ -113,14 +113,16 @@ function! webmarks#storage#json#decode(lines, path) abort
   catch /.*/
     return s:err('load_failed', 'cannot read ' . l:file . ': ' . substitute(v:exception, '^Vim\%((\a\+)\)\=:', '', ''))
   endtry
-  let l:r = s:decode_root(l:root, l:file)
-  " Neovim returns duplicate keys (and NUL in strings) as special dicts,
-  " which then fail validation with a confusing message; explain them (the
-  " walk only runs for a file that is invalid anyway)
-  if !l:r.ok && l:r.code ==# 'invalid_data' && has('nvim') && s:has_special(l:root, 0)
-    return s:invalid(l:file, 'duplicate key or NUL character in a string')
+  " Neovim returns duplicate keys (and NUL in strings) as special dicts or
+  " Blobs, also inside fields we ignore; Vim refuses such files (E938), so
+  " Neovim must too. string() is a cheap pre-scan; the walk confirms.
+  if has('nvim')
+    let l:text = string(l:root)
+    if (stridx(l:text, "'_TYPE'") >= 0 || l:text =~# '\<0z\x') && s:has_special(l:root, 0)
+      return s:invalid(l:file, 'duplicate key or NUL character in a string')
+    endif
   endif
-  return l:r
+  return s:decode_root(l:root, l:file)
 endfunction
 
 function! s:decode_root(root, file) abort

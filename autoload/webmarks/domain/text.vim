@@ -8,46 +8,85 @@ set cpoptions&vim
 
 let s:max_chars = 200
 
-" C0 controls, DEL and C1 controls become a space (so "a\tb" stays two
-" words); invisible format characters (zero-width, bidi) are dropped.
-let s:control = '[[:cntrl:]\x7f\u0080-\u009f]'
-" Also soft hyphen, combining grapheme joiner, Arabic letter mark, Hangul /
-" Braille fillers, Mongolian vowel separator, word joiner .. invisible plus
-" and (below, by code point: Neovim's regex cannot match them) the tag
-" characters U+E0000..U+E007F: invisible or blank-looking names.
-let s:invisible = '[\u200b-\u200f\u202a-\u202e\u2066-\u2069\u2028\u2029\ufeff'
-      \ . '\u00ad\u034f\u061c\u115f\u1160\u180e\u2060-\u2064\u2800\u3164\uffa0'
-      \ . '\ufe00-\ufe0f\ufff9-\ufffb]'
-let s:spaces = '[\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]'
-" The id markers of edit mode can never be part of a name.
-let s:markers = '[\u27e8\u27e9]'
+" Cleaning works on code points (str2list), not on regex characters: the
+" two editors disagree on which characters are "composing", and a regex
+" skips those, so a regex-based cleaner was neither the same in Vim and
+" Neovim nor stable when applied twice (a name accepted once could be
+" refused when the file was read back).
+
+" -> space: C0/C1 controls, DEL, Unicode spaces, line/paragraph separator
+function! s:is_space(cp) abort
+  return a:cp < 0x20 || (a:cp >= 0x7f && a:cp <= 0x9f) || a:cp == 0xa0
+        \ || a:cp == 0x1680 || (a:cp >= 0x2000 && a:cp <= 0x200a)
+        \ || a:cp == 0x2028 || a:cp == 0x2029 || a:cp == 0x202f
+        \ || a:cp == 0x205f || a:cp == 0x3000
+endfunction
+
+" -> dropped: zero-width space, bidi marks and controls, BOM, soft hyphen,
+" CGJ, Arabic letter mark, Hangul / Braille fillers, Mongolian vowel
+" separator, word joiner .. invisible plus, interlinear annotation, tag
+" characters, and the edit-mode id markers. ZWJ / ZWNJ (U+200C/D) and
+" variation selectors stay: emoji and many scripts need them.
+function! s:is_dropped(cp) abort
+  return a:cp == 0x200b || a:cp == 0x200e || a:cp == 0x200f
+        \ || (a:cp >= 0x202a && a:cp <= 0x202e) || (a:cp >= 0x2066 && a:cp <= 0x2069)
+        \ || a:cp == 0xfeff || a:cp == 0xad || a:cp == 0x34f || a:cp == 0x61c
+        \ || a:cp == 0x115f || a:cp == 0x1160 || a:cp == 0x180e
+        \ || (a:cp >= 0x2060 && a:cp <= 0x2064) || a:cp == 0x2800 || a:cp == 0x3164
+        \ || a:cp == 0xffa0 || (a:cp >= 0xfff9 && a:cp <= 0xfffb)
+        \ || (a:cp >= 0xe0000 && a:cp <= 0xe007f)
+        \ || a:cp == 0x27e8 || a:cp == 0x27e9
+endfunction
+
+" zero-width on their own: combining marks, joiners, variation selectors
+function! s:is_zero_width(cp) abort
+  return (a:cp >= 0x300 && a:cp <= 0x36f) || (a:cp >= 0x1ab0 && a:cp <= 0x1aff)
+        \ || (a:cp >= 0x1dc0 && a:cp <= 0x1dff) || (a:cp >= 0x20d0 && a:cp <= 0x20ff)
+        \ || (a:cp >= 0xfe00 && a:cp <= 0xfe0f) || (a:cp >= 0xfe20 && a:cp <= 0xfe2f)
+        \ || a:cp == 0x200c || a:cp == 0x200d || (a:cp >= 0xe0100 && a:cp <= 0xe01ef)
+endfunction
+
+function! s:empty() abort
+  return s:err('empty_name', 'name is empty after removing control characters')
+endfunction
 
 " sanitize(s) -> Result {value}
 "   invalid_text: not valid UTF-8 / not a String
-"   empty_name:   nothing left after cleaning
+"   empty_name:   nothing visible left after cleaning
+" Stable: sanitize(sanitize(s).value) gives the same value, on both editors.
 function! webmarks#domain#text#sanitize(s) abort
-  if type(a:s) != v:t_string
+  if type(a:s) != v:t_string || !webmarks#domain#text#is_utf8(a:s)
     return s:err('invalid_text', 'text contains invalid UTF-8')
   endif
-  if !webmarks#domain#text#is_utf8(a:s)
-    return s:err('invalid_text', 'text contains invalid UTF-8')
+  if a:s !~# '[^\x01-\x7f]' && strlen(a:s) == strchars(a:s)
+    " ASCII (most names): controls and DEL become spaces; bytes = chars
+    let l:v = trim(substitute(a:s, '[\x01-\x20\x7f]\+', ' ', 'g'), ' ')
+    if strlen(l:v) > s:max_chars
+      let l:v = trim(strpart(l:v, 0, s:max_chars), ' ')
+    endif
+    if l:v ==# ''
+      return s:empty()
+    endif
+    return {'ok': v:true, 'code': '', 'error': '', 'changed': v:true, 'value': l:v}
+  else
+    let l:cps = []
+    for l:cp in str2list(a:s)
+      if s:is_space(l:cp)
+        call add(l:cps, 0x20)
+      elseif !s:is_dropped(l:cp)
+        call add(l:cps, l:cp)
+      endif
+    endfor
   endif
-  let l:v = substitute(a:s, s:control, ' ', 'g')
-  let l:v = substitute(l:v, s:invisible, '', 'g')
-  let l:v = substitute(l:v, s:markers, '', 'g')
-  if strlen(l:v) != strchars(l:v) && max(str2list(l:v)) >= 0xe0000
-    " code points, not characters: Neovim attaches them to the previous
-    " character as composing characters
-    let l:v = list2str(filter(str2list(l:v), 'v:val < 0xe0000 || v:val > 0xe007f'))
+  let l:v = trim(substitute(list2str(l:cps), ' \+', ' ', 'g'), ' ')
+  let l:cps = str2list(l:v)
+  if len(l:cps) > s:max_chars
+    let l:cps = l:cps[: s:max_chars - 1]
+    let l:v = trim(list2str(l:cps), ' ')
+    let l:cps = str2list(l:v)
   endif
-  " Unicode spaces count as spaces (so a name of U+3000 alone is empty)
-  let l:v = substitute(l:v, s:spaces, ' ', 'g')
-  let l:v = trim(substitute(l:v, '\s\+', ' ', 'g'))
-  if strchars(l:v) > s:max_chars
-    let l:v = trim(strcharpart(l:v, 0, s:max_chars))
-  endif
-  if l:v ==# ''
-    return s:err('empty_name', 'name is empty after removing control characters')
+  if l:v ==# '' || empty(filter(copy(l:cps), '!s:is_zero_width(v:val)'))
+    return s:empty()
   endif
   return {'ok': v:true, 'code': '', 'error': '', 'changed': v:true, 'value': l:v}
 endfunction

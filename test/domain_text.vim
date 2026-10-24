@@ -70,3 +70,35 @@ function! s:suite.unicode_spaces_and_selectors() abort
   call s:assert.equals(s:san("a 　b").value, 'a b')
   call s:assert.equals(s:san(nr2char(0xfe0f)).code, 'empty_name')
 endfunction
+
+function! s:suite.stable_and_the_same_on_both_editors() abort
+  " every pair and some triples of awkward code points: whatever sanitize
+  " accepts, it accepts again unchanged
+  let l:cps = [0x61, 0x20, 0x09, 0x300, 0x301, 0x34f, 0x200b, 0x200c, 0x200d, 0x200e,
+        \ 0x2060, 0x3000, 0xa0, 0xad, 0xfe0f, 0xfe00, 0x27e8, 0xe0041, 0xe0100, 0x1f600,
+        \ 0x2605, 0x3042, 0x115f, 0x2800, 0xfeff]
+  let l:bad = []
+  for l:a in l:cps
+    for l:b in l:cps
+      for l:c in [0x61, 0x301, 0xfe0f]
+        let l:s = list2str([l:a, l:b, l:c])
+        let l:r = s:san(l:s)
+        if l:r.ok
+          let l:r2 = s:san(l:r.value)
+          if !l:r2.ok || l:r2.value !=# l:r.value
+            call add(l:bad, string(str2list(l:s)))
+          endif
+        endif
+      endfor
+    endfor
+  endfor
+  call s:assert.equals(l:bad, [])
+endfunction
+
+function! s:suite.joiners_and_selectors_in_words_are_kept() abort
+  let l:family = list2str([0x1f468, 0x200d, 0x1f469, 0x200d, 0x1f467])
+  call s:assert.equals(s:san(l:family).value, l:family)
+  call s:assert.equals(s:san(list2str([0x61, 0xfe0f])).value, list2str([0x61, 0xfe0f]))
+  call s:assert.equals(s:san(list2str([0x200b, 0xfe0f])).code, 'empty_name')
+  call s:assert.equals(s:san(list2str([0xe0041, 0xfe0f])).code, 'empty_name')
+endfunction

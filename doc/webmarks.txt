@@ -327,7 +327,15 @@ several Vims can share the file (see |webmarks-limitations|).
 A file that cannot be parsed, has a wrong structure or a newer
 `schema_version` is refused and never overwritten: fix it by hand (the
 error tells what and where) and press `R`. Two bookmarks with the same
-URL or a too small `next_id` only produce a warning.
+URL, a too small `next_id`, or a name with characters webmarks would
+remove (controls, invisible characters) only produce a warning; such a
+name is used cleaned, and the cleaned form is written with the next
+change (until then the warning is repeated on every read).
+
+Names: control characters become spaces, runs of spaces become one,
+invisible characters (zero-width space, bidi controls, soft hyphen, ...)
+are removed, and at most 200 characters are kept. Joiners and variation
+selectors stay, so emoji sequences survive.
 
 URLs must be `http://` or `https://` and use only the characters of
 RFC 3986 (ASCII letters, digits and `-._~:/?#[]@!$&'()*+,;=%`). Write a

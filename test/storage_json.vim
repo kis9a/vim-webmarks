@@ -286,3 +286,10 @@ function! s:suite.names_from_an_older_file_are_cleaned_not_refused() abort
   call s:assert.equals(filter(copy(l:l.data.folders), 'v:val.id ==# "f1"')[0].name, 'Dev')
   call s:assert.match(join(l:l.warnings), 'f1: name cleaned')
 endfunction
+
+function! s:suite.duplicate_key_in_an_ignored_field_is_refused() abort
+  let l:lines = webmarks#storage#json#encode(s:sample()).lines
+  let l:lines[1] = '  "extra": {"q": 1, "q": 2}, "schema_version": 1,'
+  call s:write(l:lines)
+  call s:assert.false(webmarks#storage#json#load(s:path).ok)
+endfunction
