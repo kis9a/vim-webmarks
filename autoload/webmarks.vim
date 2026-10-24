@@ -13,18 +13,49 @@ function! s:refresh(...) abort
   call webmarks#ui#tree#on_changed()
 endfunction
 
-" Open the tree (or go to its window).
-function! webmarks#open() abort
-  call s:listen()
-  return webmarks#ui#tree#open()
+let s:how = ['vsplit', 'split', 'edit', 'tab']
+
+" '' or a valid way to open, else an error Result
+function! s:check_how(args) abort
+  let l:how = trim(get(a:args, 0, ''))
+  if l:how ==# '' || index(s:how, l:how) >= 0
+    return {'ok': v:true, 'how': l:how}
+  endif
+  let l:msg = printf('unknown way to open: %s (%s)', l:how, join(s:how, ', '))
+  call webmarks#compat#notify#error(l:msg)
+  return {'ok': v:false, 'code': 'bad_option', 'error': l:msg, 'changed': v:false}
 endfunction
 
-function! webmarks#toggle() abort
-  if webmarks#ui#tree#is_open()
-    call webmarks#ui#tree#close()
-    return
+" Open the tree (or go to its window). [how]: vsplit / split / edit / tab;
+" 'edit' uses the current window (default: g:webmarks_open).
+function! webmarks#open(...) abort
+  let l:c = s:check_how(a:000)
+  if !l:c.ok
+    return l:c
   endif
-  call webmarks#open()
+  call s:listen()
+  return webmarks#ui#tree#open(l:c.how)
+endfunction
+
+" Open or close. With 'edit' (argument or g:webmarks_open) only the
+" current window counts, like netrw's :Explore / :Rexplore: the tree goes
+" back to where it came from, any other buffer is replaced by the tree.
+function! webmarks#toggle(...) abort
+  let l:c = s:check_how(a:000)
+  if !l:c.ok
+    return l:c
+  endif
+  let l:how = l:c.how ==# '' ? webmarks#ui#tree#option('open') : l:c.how
+  if l:how ==# 'edit' ? webmarks#ui#tree#is_current() : webmarks#ui#tree#is_open()
+    call webmarks#ui#tree#close()
+    return {'ok': v:true, 'code': '', 'error': '', 'changed': v:false}
+  endif
+  return webmarks#open(l:c.how)
+endfunction
+
+" Completion for the [how] argument of :Webmarks and friends.
+function! webmarks#complete_open(arg, line, pos) abort
+  return filter(copy(s:how), 'stridx(v:val, a:arg) == 0')
 endfunction
 
 " add(url, name, folder_id) -> Result. An empty name fetches the title.
@@ -89,8 +120,8 @@ function! webmarks#search() abort
 endfunction
 
 " Open the tree and start editing it as text.
-function! webmarks#edit() abort
-  let l:r = webmarks#open()
+function! webmarks#edit(...) abort
+  let l:r = call('webmarks#open', a:000)
   if l:r.ok
     call webmarks#ui#tree#enter_edit()
   endif

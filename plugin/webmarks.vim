@@ -34,11 +34,11 @@ if !exists('g:webmarks_no_default_mappings')
 endif
 
 " no -bar: a URL may contain '|'
-command! Webmarks call webmarks#open()
-command! WebmarksToggle call webmarks#toggle()
+command! -nargs=? -complete=customlist,webmarks#complete_open Webmarks call webmarks#open(<q-args>)
+command! -nargs=? -complete=customlist,webmarks#complete_open WebmarksToggle call webmarks#toggle(<q-args>)
 command! -nargs=* WebmarksAdd call webmarks#add_command(<q-args>)
 command! WebmarksSearch call webmarks#search()
-command! WebmarksEdit call webmarks#edit()
+command! -nargs=? -complete=customlist,webmarks#complete_open WebmarksEdit call webmarks#edit(<q-args>)
 
 let &cpoptions = s:save_cpo
 unlet s:save_cpo

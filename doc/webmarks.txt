@@ -65,14 +65,25 @@ the plugin is lazily loaded): >
 ==============================================================================
 3. Commands						*webmarks-commands*
 
-:Webmarks						*:Webmarks*
-	Open the tree (|g:webmarks_open|), or go to its window if it is
-	already shown (also in another tab page). The data file is read
+:Webmarks [how]						*:Webmarks*
+	Open the tree, or go to its window if it is already shown (also in
+	another tab page). [how] is `vsplit`, `split`, `edit` or `tab`
+	(default |g:webmarks_open|). `edit` puts the tree in the current
+	window, even when another window shows it, and remembers the buffer
+	it replaced: `q` goes back to it (like netrw's |:Explore| and
+	|:Rexplore|). The data file is read
 	again. When it cannot be read, an error is shown and the tree is
 	not opened.
 
-:WebmarksToggle						*:WebmarksToggle*
+:WebmarksToggle [how]					*:WebmarksToggle*
 	Close the tree window of the current tab page, or open the tree.
+	With `edit` ([how], or |g:webmarks_open| set to `'edit'`) only the
+	current window counts: on the tree it goes back to the buffer the
+	tree replaced (if that is gone: the alternate buffer, else an empty
+	one); on any other buffer it shows the tree in this window. Unsaved
+	edits (|webmarks-edit|) are not left behind: it warns instead. >
+	nnoremap <silent> <Leader>n :<C-u>WebmarksToggle edit<CR>
+<
 
 :WebmarksAdd [url] [name...]				*:WebmarksAdd*
 	Add a bookmark to the root.
@@ -91,8 +102,8 @@ the plugin is lazily loaded): >
 	of the open tree (or of the defaults); fzf does not re-sort them.
 	Needs fzf's `plugin/fzf.vim` to be loaded.
 
-:WebmarksEdit						*:WebmarksEdit*
-	Open the tree and start |webmarks-edit|.
+:WebmarksEdit [how]					*:WebmarksEdit*
+	Open the tree ([how] as for |:Webmarks|) and start |webmarks-edit|.
 
 ==============================================================================
 4. The tree buffer					*webmarks-tree*
@@ -244,7 +255,9 @@ An invalid value is reported once and the default is used.
 
 *g:webmarks_open*		(default: `'vsplit'`)
 	How |:Webmarks| shows the tree: `'vsplit'` (left), `'split'` (top),
-	`'edit'` (current window) or `'tab'`.
+	`'edit'` (current window; |:WebmarksToggle| then switches the current
+	window between the tree and the buffer it replaced) or `'tab'`. The
+	commands take the same values as an argument for one call.
 
 *g:webmarks_width*		(default: `40`)
 	Width of a new `'vsplit'` window.
@@ -281,10 +294,10 @@ An invalid value is reported once and the default is used.
 ==============================================================================
 7. Functions						*webmarks-functions*
 
-webmarks#open()						*webmarks#open()*
+webmarks#open([{how}])					*webmarks#open()*
 	Same as |:Webmarks|. Returns a result dict ({ok, code, error}).
 
-webmarks#toggle()					*webmarks#toggle()*
+webmarks#toggle([{how}])				*webmarks#toggle()*
 	Same as |:WebmarksToggle|.
 
 webmarks#add({url}, {name}, {folder_id})		*webmarks#add()*
@@ -298,7 +311,7 @@ webmarks#add_command({args})			*webmarks#add_command()*
 webmarks#search()					*webmarks#search()*
 	Same as |:WebmarksSearch|.
 
-webmarks#edit()						*webmarks#edit()*
+webmarks#edit([{how}])					*webmarks#edit()*
 	Same as |:WebmarksEdit|.
 
 webmarks#reload()					*webmarks#reload()*

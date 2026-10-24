@@ -41,11 +41,11 @@ Optional:
 
 | Command | Description |
 |---|---|
-| `:Webmarks` | Open the tree (or go to its window) |
-| `:WebmarksToggle` | Open or close the tree |
+| `:Webmarks [how]` | Open the tree (or go to its window); `how`: `vsplit` `split` `edit` `tab` |
+| `:WebmarksToggle [how]` | Open or close the tree; with `edit`, switch the current window between a buffer and the tree (netrw-like) |
 | `:WebmarksAdd [url] [name...]` | Add a bookmark; no name = fetch the title, no URL = ask |
 | `:WebmarksSearch` | Pick a bookmark with fzf and open it |
-| `:WebmarksEdit` | Open the tree in edit mode |
+| `:WebmarksEdit [how]` | Open the tree in edit mode |
 
 ### Keys in the tree
 
@@ -78,11 +78,11 @@ cursor goes to the line. `:e!` discards. See `:help webmarks-edit`.
 
 | Function | Description |
 |---|---|
-| `webmarks#open()` | `:Webmarks` |
-| `webmarks#toggle()` | `:WebmarksToggle` |
+| `webmarks#open([how])` | `:Webmarks` |
+| `webmarks#toggle([how])` | `:WebmarksToggle` |
 | `webmarks#add(url, name, folder_id)` | Add a bookmark (`folder_id`: `'f3'` or `v:null`) |
 | `webmarks#search()` | `:WebmarksSearch` |
-| `webmarks#edit()` | `:WebmarksEdit` |
+| `webmarks#edit([how])` | `:WebmarksEdit` |
 | `webmarks#reload()` | Read the file again |
 
 ### Options
@@ -107,6 +107,8 @@ Map to the commands (they work even while the plugin is lazily loaded):
 
 ```vim
 nnoremap <silent> <Leader>bb :<C-u>WebmarksToggle<CR>
+" in the current window, back with the same key (like netrw's :Explore)
+nnoremap <silent> <Leader>bn :<C-u>WebmarksToggle edit<CR>
 nnoremap <silent> <Leader>bs :<C-u>WebmarksSearch<CR>
 nnoremap <silent> <Leader>ba :<C-u>WebmarksAdd<CR>
 

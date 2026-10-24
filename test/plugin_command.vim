@@ -128,3 +128,110 @@ function! s:suite.plugin_does_not_load_autoload() abort
   call s:assert.equals(l:lines[0], '0')
   call s:assert.not_match(join(l:lines, "\n"), 'autoload/webmarks')
 endfunction
+
+" --- v7: open and toggle in the current window (netrw-like) ----------------
+
+function! s:suite.toggle_edit_opens_here_and_goes_back() abort
+  set hidden
+  edit! a.txt
+  WebmarksToggle edit
+  call s:assert.equals([bufname('%'), winnr('$')], ['webmarks://webmarks', 1])
+  WebmarksToggle edit
+  call s:assert.equals([fnamemodify(bufname('%'), ':t'), winnr('$')], ['a.txt', 1])
+  set nohidden
+  silent! bwipeout! a.txt
+endfunction
+
+function! s:suite.toggle_edit_ignores_a_tree_in_another_window() abort
+  set hidden
+  Webmarks vsplit
+  wincmd p
+  edit! b.txt
+  WebmarksToggle edit
+  " this window shows the tree now; the other tree window is left alone
+  call s:assert.equals(bufname('%'), 'webmarks://webmarks')
+  call s:assert.equals(winnr('$'), 2)
+  call s:assert.equals(len(win_findbuf(webmarks#ui#tree#bufnr())), 2)
+  WebmarksToggle edit
+  call s:assert.equals(fnamemodify(bufname('%'), ':t'), 'b.txt')
+  call s:assert.equals(len(win_findbuf(webmarks#ui#tree#bufnr())), 1)
+  set nohidden
+  silent! bwipeout! b.txt
+endfunction
+
+function! s:suite.goes_back_to_the_recorded_buffer() abort
+  set hidden
+  edit! a.txt
+  WebmarksToggle edit
+  " the alternate buffer changes while the tree is shown
+  edit! c.txt
+  execute 'buffer' webmarks#ui#tree#bufnr()
+  call s:assert.equals(fnamemodify(bufname('#'), ':t'), 'c.txt')
+  WebmarksToggle edit
+  call s:assert.equals(fnamemodify(bufname('%'), ':t'), 'a.txt')
+  " the recorded buffer is gone: fall back to the alternate one ...
+  WebmarksToggle edit
+  execute 'buffer c.txt'
+  execute 'buffer' webmarks#ui#tree#bufnr()
+  bwipeout! a.txt
+  WebmarksToggle edit
+  call s:assert.equals(fnamemodify(bufname('%'), ':t'), 'c.txt')
+  " ... and to an empty buffer when there is none
+  WebmarksToggle edit
+  bwipeout! c.txt
+  call s:assert.equals(bufname('%'), 'webmarks://webmarks')
+  WebmarksToggle edit
+  call s:assert.equals(bufname('%'), '')
+  set nohidden
+endfunction
+
+function! s:suite.q_in_a_tree_opened_in_place_goes_back() abort
+  set hidden
+  let g:webmarks_open = 'vsplit'
+  edit! a.txt
+  Webmarks edit
+  call s:assert.equals(winnr('$'), 1)
+  normal q
+  call s:assert.equals([fnamemodify(bufname('%'), ':t'), winnr('$')], ['a.txt', 1])
+  set nohidden
+  silent! bwipeout! a.txt
+endfunction
+
+function! s:suite.g_webmarks_open_edit_makes_plain_toggle_netrw_like() abort
+  set hidden
+  let g:webmarks_open = 'edit'
+  edit! a.txt
+  WebmarksToggle
+  call s:assert.equals(bufname('%'), 'webmarks://webmarks')
+  WebmarksToggle
+  call s:assert.equals(fnamemodify(bufname('%'), ':t'), 'a.txt')
+  set nohidden
+  silent! bwipeout! a.txt
+endfunction
+
+function! s:suite.unsaved_edit_mode_does_not_toggle_away() abort
+  set hidden
+  edit! a.txt
+  WebmarksToggle edit
+  normal i
+  call append('$', ['  https://new.example'])
+  WebmarksToggle edit
+  call s:assert.equals(bufname('%'), 'webmarks://webmarks')
+  call s:assert.match(execute('messages'), 'unsaved edits')
+  edit!
+  WebmarksToggle edit
+  call s:assert.equals(fnamemodify(bufname('%'), ':t'), 'a.txt')
+  set nohidden
+  silent! bwipeout! a.txt
+endfunction
+
+function! s:suite.bad_argument_and_completion() abort
+  let l:r = webmarks#open('sideways')
+  call s:assert.equals(l:r.code, 'bad_option')
+  call s:assert.equals(webmarks#ui#tree#bufnr(), -1)
+  call s:assert.match(execute('messages'), 'unknown way to open: sideways')
+  call s:assert.equals(webmarks#complete_open('', '', 0), ['vsplit', 'split', 'edit', 'tab'])
+  call s:assert.equals(webmarks#complete_open('s', '', 0), ['split'])
+  WebmarksEdit edit
+  call s:assert.equals([b:webmarks.mode, winnr('$')], ['edit', 1])
+endfunction

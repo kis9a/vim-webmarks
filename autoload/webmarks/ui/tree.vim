@@ -436,8 +436,22 @@ function! webmarks#ui#tree#is_open() abort
   return l:buf > 0 && bufwinid(l:buf) > 0
 endfunction
 
-" open() -> Result
-function! webmarks#ui#tree#open() abort
+" Is the current window showing the tree?
+function! webmarks#ui#tree#is_current() abort
+  let l:buf = webmarks#ui#tree#bufnr()
+  return l:buf > 0 && bufnr('%') == l:buf
+endfunction
+
+" open([how]) -> Result
+"   how: '' (= g:webmarks_open), 'vsplit', 'split', 'edit' or 'tab'.
+"   'edit' shows the tree in the current window, like netrw's :Explore,
+"   even when another window already shows it, and remembers the buffer
+"   to go back to (w:webmarks_return).
+function! webmarks#ui#tree#open(...) abort
+  let l:how = get(a:000, 0, '')
+  if l:how ==# ''
+    let l:how = webmarks#ui#tree#option('open')
+  endif
   let l:buf = webmarks#ui#tree#bufnr()
   let l:state = l:buf > 0 ? getbufvar(l:buf, 'webmarks', {}) : {}
   let l:editing = !empty(l:state) && l:state.mode ==# 'edit'
@@ -453,10 +467,12 @@ function! webmarks#ui#tree#open() abort
   endif
   let l:buf = s:ensure_buffer()
   let l:wins = s:windows(l:buf)
-  if !empty(l:wins)
+  if l:how ==# 'edit' && bufnr('%') == l:buf
+    " already here
+  elseif l:how !=# 'edit' && !empty(l:wins)
     call win_gotoid(l:wins[0])
   else
-    let l:how = webmarks#ui#tree#option('open')
+    let l:from = bufnr('%')
     try
       if l:how ==# 'vsplit'
         execute 'silent vertical topleft sbuffer' l:buf
@@ -474,6 +490,13 @@ function! webmarks#ui#tree#open() abort
       call webmarks#compat#notify#error(l:msg)
       return {'ok': v:false, 'code': 'open_failed', 'error': l:msg, 'changed': v:false}
     endtry
+    " how this window got the tree, for close(); where 'edit' came from
+    let w:webmarks_opened = l:how
+    if l:how ==# 'edit'
+      let w:webmarks_return = l:from
+    else
+      unlet! w:webmarks_return
+    endif
   endif
   if !exists('b:webmarks')
     call s:init_buffer()
@@ -496,8 +519,9 @@ function! s:ok() abort
   return {'ok': v:true, 'code': '', 'error': '', 'changed': v:false}
 endfunction
 
-" Close the tree window in the current tab page (the current window if
-" it shows the tree).
+" Close the tree window: the current window if it shows the tree, else
+" the tree window of the current tab page. A window that got the tree in
+" place ('edit') goes back to the buffer it showed before.
 function! webmarks#ui#tree#close() abort
   let l:buf = webmarks#ui#tree#bufnr()
   if l:buf < 0
@@ -508,10 +532,18 @@ function! webmarks#ui#tree#close() abort
     return
   endif
   call win_gotoid(l:winid)
-  let l:how = webmarks#ui#tree#option('open')
+  if b:webmarks.mode ==# 'edit' && &modified
+    call webmarks#compat#notify#warn(s:edit_msg)
+    return
+  endif
+  let l:how = get(w:, 'webmarks_opened', webmarks#ui#tree#option('open'))
   if l:how ==# 'edit'
+    let l:back = get(w:, 'webmarks_return', -1)
+    unlet! w:webmarks_return w:webmarks_opened
     let l:alt = bufnr('#')
-    if l:alt > 0 && buflisted(l:alt) && l:alt != bufnr('%')
+    if l:back > 0 && bufexists(l:back) && l:back != l:buf
+      execute 'buffer' l:back
+    elseif l:alt > 0 && buflisted(l:alt) && l:alt != bufnr('%')
       buffer #
     else
       enew
