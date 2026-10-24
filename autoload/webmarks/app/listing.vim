@@ -108,6 +108,36 @@ function! webmarks#app#listing#rows(data, policy, view, now, pending_ids) abort
   return l:rows
 endfunction
 
+" edit_lines(data, policy, now) -> {lines, ids}: the tree as editable
+" text (app/edit#parse reads it back). Every line ends with an id marker
+" the UI conceals; a provisional name (= the URL) is left out so the URL
+" is not written twice.
+function! webmarks#app#listing#edit_lines(data, policy, now) abort
+  let l:lines = []
+  let l:ids = []
+  for l:row in webmarks#app#listing#rows(a:data, a:policy, 'tree', a:now, [])
+    if l:row.kind ==# 'folder'
+      call add(l:lines, repeat('  ', l:row.depth - 1) . s:clean(l:row.folder.name) . '/ ' . s:marker(l:row.id))
+    elseif l:row.kind ==# 'bookmark'
+      let l:b = l:row.bookmark
+      let l:name = l:b.name_source ==# 'url' ? '' : s:clean(l:b.display_name) . '  '
+      call add(l:lines, repeat('  ', l:row.depth) . (l:b.is_favorite ? s:star : s:nostar)
+            \ . l:name . l:b.url . ' ' . s:marker(l:row.id))
+    else
+      continue
+    endif
+    call add(l:ids, l:row.id)
+  endfor
+  if empty(l:lines)
+    call add(l:lines, '# add lines here:  name  https://example.com')
+  endif
+  return {'lines': l:lines, 'ids': l:ids}
+endfunction
+
+function! s:marker(id) abort
+  return "\u27e8" . a:id . "\u27e9"
+endfunction
+
 " candidates(data, policy, now) -> List of "id\t★ name\tpath\turl"
 function! webmarks#app#listing#candidates(data, policy, now) abort
   let l:out = []

@@ -10,6 +10,7 @@ let s:save_cpo = &cpoptions
 set cpoptions&vim
 
 let s:name = 'webmarks://tree'
+let s:edit_msg = 'unsaved edits: :w to apply, :e! to discard'
 
 " action -> default key, in help order
 let s:actions = [
@@ -420,7 +421,7 @@ function! webmarks#ui#tree#open() abort
   call s:apply_window_options()
   if b:webmarks.mode ==# 'edit'
     if &modified
-      call webmarks#compat#notify#warn('unsaved edits: :w to apply, :e! to discard')
+      call webmarks#compat#notify#warn(s:edit_msg)
       return s:ok()
     endif
     " left with :x / :update and nothing changed: back to view mode
@@ -505,6 +506,10 @@ function! s:forget_window() abort
 endfunction
 
 function! webmarks#ui#tree#on_write() abort
+  if expand('<amatch>') !=# bufname('%')
+    call webmarks#compat#notify#warn('the tree cannot be written to another file')
+    return
+  endif
   if !exists('b:webmarks') || b:webmarks.mode !=# 'edit'
     setlocal nomodified
     return
@@ -798,7 +803,7 @@ endfunction
 function! s:do_close() abort
   if b:webmarks.mode ==# 'edit'
     if &modified
-      call webmarks#compat#notify#warn('unsaved edits: :w to apply, :e! to discard')
+      call webmarks#compat#notify#warn(s:edit_msg)
     else
       call webmarks#ui#tree#leave_edit()
     endif
@@ -825,20 +830,138 @@ function! s:do_help() abort
   echo join(l:lines, "\n")
 endfunction
 
-" --- edit mode (filled in by the edit-mode milestone) ------------------------
+" --- edit mode -----------------------------------------------------------------
+
 
 function! webmarks#ui#tree#enter_edit() abort
-  call webmarks#compat#notify#warn('edit mode is not available yet')
+  if !exists('b:webmarks')
+    return
+  endif
+  if b:webmarks.view !=# 'tree'
+    call webmarks#compat#notify#warn('edit mode is available in tree view only')
+    return
+  endif
+  if b:webmarks.mode ==# 'edit'
+    return
+  endif
+  let l:r = webmarks#app#store#reload()
+  if !l:r.ok
+    call webmarks#compat#notify#error(l:r.error)
+    return
+  endif
+  let l:buf = bufnr('%')
+  call s:render_buffer(l:buf)
+  let l:edit = webmarks#app#listing#edit_lines(webmarks#app#store#current(), b:webmarks.policy,
+        \ webmarks#compat#clock#now())
+  let b:webmarks.edit = {'snapshot_ids': l:edit.ids,
+        \ 'mapped_keys': filter(copy(b:webmarks.mapped_keys), 'v:val !=# "q"'), 'dirty': 0}
+  let b:webmarks.mode = 'edit'
+  " still undolevels=-1 here: the view text cannot be undone into
+  setlocal modifiable
+  call setline(1, l:edit.lines)
+  if line('$') > len(l:edit.lines)
+    silent call deletebufline(l:buf, len(l:edit.lines) + 1, '$')
+  endif
+  setlocal undolevels< expandtab shiftwidth=2 softtabstop=2
+  for l:winid in s:windows(l:buf)
+    call win_execute(l:winid, 'call webmarks#ui#tree#_edit_window_on()')
+  endfor
+  for l:key in b:webmarks.edit.mapped_keys
+    execute 'silent! nunmap <buffer>' l:key
+  endfor
+  " setline() sets 'modified' even for identical text
+  setlocal nomodified
+  echo '-- WEBMARKS EDIT -- :w to apply, :e! to discard'
+endfunction
+
+" Edit-mode window settings for the current window.
+function! webmarks#ui#tree#_edit_window_on() abort
+  call s:apply_window_options()
+  call s:clear_matches()
+  if !exists('w:webmarks_conceal_id')
+    let w:webmarks_conceal_id = matchadd('Conceal', '\s\?' . "⟨" . '[bf]\d\+' . "⟩",
+          \ 20, -1, {'conceal': ''})
+  endif
+endfunction
+
+function! s:edit_window_off() abort
+  if exists('w:webmarks_conceal_id')
+    silent! call matchdelete(w:webmarks_conceal_id)
+    unlet w:webmarks_conceal_id
+  endif
+  call s:apply_window_options()
 endfunction
 
 function! webmarks#ui#tree#leave_edit() abort
-endfunction
-
-function! webmarks#ui#tree#_edit_window_on() abort
-endfunction
-
-function! webmarks#ui#tree#_edit_write() abort
+  if !exists('b:webmarks') || b:webmarks.mode !=# 'edit'
+    return
+  endif
+  let b:webmarks.mode = 'view'
+  let l:buf = bufnr('%')
+  for l:winid in s:windows(l:buf)
+    call win_execute(l:winid, 'call s:edit_window_off()')
+  endfor
+  setlocal undolevels=-1 nomodifiable expandtab< shiftwidth< softtabstop<
+  call s:map_default_keys()
+  let b:webmarks.edit.dirty = 0
+  call webmarks#ui#tree#render()
   setlocal nomodified
+endfunction
+
+" :w in edit mode
+function! webmarks#ui#tree#_edit_write() abort
+  let l:p = webmarks#app#edit#parse(getline(1, '$'), b:webmarks.edit.snapshot_ids)
+  if !l:p.ok
+    call s:show_errors(l:p)
+    return
+  endif
+  if !empty(l:p.delete_ids)
+        \ && !webmarks#ui#prompt#confirm(printf('Delete %d item(s)?', len(l:p.delete_ids)))
+    call webmarks#compat#notify#warn('cancelled')
+    return
+  endif
+  let l:r = webmarks#app#edit#commit(l:p.entries, l:p.delete_ids, webmarks#compat#clock#now())
+  if !l:r.ok
+    call s:show_errors(l:r)
+    return
+  endif
+  for l:w in get(l:r, 'warnings', [])
+    call webmarks#compat#notify#warn(l:w)
+  endfor
+  setlocal nomodified
+  for l:f in get(l:r, 'fetch_title', [])
+    call webmarks#app#title#request(l:f.id, l:f.url, 0, webmarks#ui#tree#option('fetch_title'))
+  endfor
+  call webmarks#ui#tree#leave_edit()
+  call webmarks#compat#notify#info(s:summary(get(l:r, 'counts', {})))
+endfunction
+
+" Errors keep the buffer modified and in edit mode (so :wq does not close).
+function! s:show_errors(r) abort
+  let l:errors = get(a:r, 'errors', [])
+  if empty(l:errors)
+    let l:errors = [{'lnum': 0, 'error': a:r.error}]
+  endif
+  for l:e in l:errors
+    call webmarks#compat#notify#error(l:e.error)
+  endfor
+  for l:e in l:errors
+    if l:e.lnum > 0
+      call cursor(l:e.lnum, 1)
+      break
+    endif
+  endfor
+endfunction
+
+function! s:summary(counts) abort
+  let l:parts = []
+  for [l:key, l:label] in [['added', 'added'], ['renamed', 'renamed'], ['moved', 'moved'],
+        \ ['url_changed', 'URL changed'], ['favorite_changed', 'favorite changed'], ['deleted', 'deleted']]
+    if get(a:counts, l:key, 0) > 0
+      call add(l:parts, a:counts[l:key] . ' ' . l:label)
+    endif
+  endfor
+  return empty(l:parts) ? 'no changes' : 'applied: ' . join(l:parts, ', ')
 endfunction
 
 let &cpoptions = s:save_cpo
