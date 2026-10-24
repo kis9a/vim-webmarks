@@ -20,16 +20,25 @@ function! s:clean(s) abort
   return substitute(a:s, '[\t\n\r]', ' ', 'g')
 endfunction
 
-function! s:ranked(bookmarks, now) abort
-  return map(copy(a:bookmarks), '{"bookmark": v:val, "score": webmarks#domain#frecency#score(v:val.usage, a:now)}')
-endfunction
-
 function! s:sorted(policy, bookmarks, now) abort
-  return map(webmarks#domain#sort#sort(a:policy, s:ranked(a:bookmarks, a:now)), 'v:val.bookmark')
+  let l:ranked = []
+  for l:b in a:bookmarks
+    call add(l:ranked, {'bookmark': l:b, 'score': webmarks#domain#frecency#score(l:b.usage, a:now)})
+  endfor
+  return map(webmarks#domain#sort#sort(a:policy, l:ranked), 'v:val.bookmark')
 endfunction
 
-function! s:same(a, b) abort
-  return type(a:a) == type(a:b) && a:a ==# a:b
+" folder id ('' = root) -> bookmarks in it
+function! s:by_folder(bookmarks) abort
+  let l:groups = {}
+  for l:b in a:bookmarks
+    let l:key = l:b.folder_id is v:null ? '' : l:b.folder_id
+    if !has_key(l:groups, l:key)
+      let l:groups[l:key] = []
+    endif
+    call add(l:groups[l:key], l:b)
+  endfor
+  return l:groups
 endfunction
 
 function! s:bookmark_row(b, depth, pending) abort
@@ -59,18 +68,14 @@ function! s:empty_row() abort
         \ 'hl': [['WebmarksEmpty', 1, strlen(s:empty_text)]]}
 endfunction
 
-function! s:in_folder(data, folder_id) abort
-  return filter(copy(a:data.bookmarks), 's:same(v:val.folder_id, a:folder_id)')
-endfunction
-
-function! s:tree_folder(rows, data, policy, now, pending, folder, depth) abort
+function! s:tree_folder(rows, data, groups, policy, now, pending, folder, depth) abort
   call add(a:rows, s:folder_row(a:folder, a:depth))
   if a:depth < 2
     for l:child in webmarks#domain#folder#children(a:data.folders, a:folder.id)
-      call s:tree_folder(a:rows, a:data, a:policy, a:now, a:pending, l:child, a:depth + 1)
+      call s:tree_folder(a:rows, a:data, a:groups, a:policy, a:now, a:pending, l:child, a:depth + 1)
     endfor
   endif
-  for l:b in s:sorted(a:policy, s:in_folder(a:data, a:folder.id), a:now)
+  for l:b in s:sorted(a:policy, get(a:groups, a:folder.id, []), a:now)
     call add(a:rows, s:bookmark_row(l:b, a:depth, has_key(a:pending, l:b.id)))
   endfor
 endfunction
@@ -83,9 +88,14 @@ function! webmarks#app#listing#rows(data, policy, view, now, pending_ids) abort
   endfor
   let l:rows = []
   if a:view ==# 'flat'
+    let l:paths = {}
     for l:b in s:sorted(a:policy, a:data.bookmarks, a:now)
       let l:row = s:bookmark_row(l:b, 0, has_key(l:pending, l:b.id))
-      let l:path = webmarks#domain#folder#path(a:data.folders, l:b.folder_id)
+      let l:key = l:b.folder_id is v:null ? '' : l:b.folder_id
+      if !has_key(l:paths, l:key)
+        let l:paths[l:key] = webmarks#domain#folder#path(a:data.folders, l:b.folder_id)
+      endif
+      let l:path = l:paths[l:key]
       if l:path !=# ''
         let l:suffix = '(' . s:clean(l:path) . ')'
         call add(l:row.hl, ['WebmarksPath', strlen(l:row.text) + 3, strlen(l:suffix)])
@@ -94,12 +104,13 @@ function! webmarks#app#listing#rows(data, policy, view, now, pending_ids) abort
       call add(l:rows, l:row)
     endfor
   else
+    let l:groups = s:by_folder(a:data.bookmarks)
     " root bookmarks first, so they do not look like a folder's children
-    for l:b in s:sorted(a:policy, s:in_folder(a:data, v:null), a:now)
+    for l:b in s:sorted(a:policy, get(l:groups, '', []), a:now)
       call add(l:rows, s:bookmark_row(l:b, 0, has_key(l:pending, l:b.id)))
     endfor
     for l:f in webmarks#domain#folder#children(a:data.folders, v:null)
-      call s:tree_folder(l:rows, a:data, a:policy, a:now, l:pending, l:f, 1)
+      call s:tree_folder(l:rows, a:data, l:groups, a:policy, a:now, l:pending, l:f, 1)
     endfor
   endif
   if empty(l:rows)

@@ -155,13 +155,14 @@ function! webmarks#storage#json#decode(lines, path) abort
   " Business-rule slips from a hand edit are tolerated with a warning so
   " one bad line does not lock the user out.
   let l:warnings = []
-  let l:seen = []
+  " same rule as domain/bookmark#find_duplicate (exact match), indexed
+  let l:owner = {}
   for l:b in l:bookmarks
-    let l:dup = webmarks#domain#bookmark#find_duplicate(l:seen, l:b.url, v:null)
-    if l:dup isnot v:null
-      call add(l:warnings, printf('duplicate URL in %s: %s (%s and %s)', l:file, l:b.url, l:dup.id, l:b.id))
+    if has_key(l:owner, l:b.url)
+      call add(l:warnings, printf('duplicate URL in %s: %s (%s and %s)', l:file, l:b.url, l:owner[l:b.url], l:b.id))
+    else
+      let l:owner[l:b.url] = l:b.id
     endif
-    call add(l:seen, l:b)
   endfor
   let l:max = 0
   for l:item in l:folders + l:bookmarks

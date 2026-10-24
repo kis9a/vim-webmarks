@@ -13,6 +13,7 @@ set cpoptions&vim
 
 let s:max_errors = 10
 let s:marker = '\s\?' . "⟨" . '\([bf]\d\+\)' . "⟩"
+" (documentation of the URL rule; parse_line() implements it directly)
 let s:url_token = '\%(^\|\s\+\)\zshttps\?://\S\+$'
 let s:bookmark_head = '^\( *\)\(' . "★" . ' \|\* \|  \)\(.*\)$'
 
@@ -49,10 +50,12 @@ function! s:parse_line(text) abort
   if l:line =~# '^\s*$' || l:line =~# '^\s*#'
     return v:null
   endif
-  " the URL first: a URL may end with '/' too
-  let [l:url, l:start, l:_] = matchstrpos(l:line, s:url_token)
-  if l:start >= 0
-    let l:rest = strpart(l:line, 0, l:start)
+  " the URL first: a URL may end with '/' too. The last blank-separated
+  " token, when it starts with http(s)://, is the URL (s:url_token; this
+  " form avoids a slow backtracking regex on every line).
+  let l:url = matchstr(l:line, '\S\+$')
+  if l:url =~# '^https\?://'
+    let l:rest = strpart(l:line, 0, strlen(l:line) - strlen(l:url))
     let l:h = matchlist(l:rest, s:bookmark_head)
     if empty(l:h) || strlen(l:h[1]) % 2
       return {'code': 'parse_error', 'msg': 'bad indent (bookmark lines need the 2-column star slot)'}
@@ -96,6 +99,7 @@ endfunction
 
 function! webmarks#app#edit#parse(lines, snapshot_ids) abort
   let l:entries = []
+  let l:open = []
   let l:errors = []
   let l:seen = {}
   let l:lnum = 0
@@ -119,22 +123,24 @@ function! webmarks#app#edit#parse(lines, snapshot_ids) abort
     endif
     " the tree check: the first line above with a smaller column must be
     " a folder exactly one level up
+    " l:open holds the lines above with strictly increasing columns; after
+    " popping those at or right of this one, its top is the first line
+    " above with a smaller column
     let l:col = s:column(l:e)
+    let l:e.col = l:col
+    while !empty(l:open) && l:open[-1].col >= l:col
+      call remove(l:open, -1)
+    endwhile
     let l:e.parent_lnum = 0
     if l:col > 0
-      let l:parent = v:null
-      for l:i in range(len(l:entries) - 1, 0, -1)
-        if s:column(l:entries[l:i]) < l:col
-          let l:parent = l:entries[l:i]
-          break
-        endif
-      endfor
-      if l:parent is v:null || l:parent.kind !=# 'folder' || s:column(l:parent) != l:col - 2
+      let l:parent = empty(l:open) ? v:null : l:open[-1]
+      if l:parent is v:null || l:parent.kind !=# 'folder' || l:parent.col != l:col - 2
         call s:error(l:errors, l:lnum, 'parse_error', 'bad indent (no parent folder at this level)')
         continue
       endif
       let l:e.parent_lnum = l:parent.lnum
     endif
+    call add(l:open, l:e)
     call add(l:entries, l:e)
   endfor
   if !empty(l:errors)
@@ -149,15 +155,6 @@ endfunction
 
 function! webmarks#app#edit#commit(entries, delete_ids, now) abort
   return webmarks#app#store#mutate(function('s:transform', [a:entries, a:delete_ids, a:now]))
-endfunction
-
-function! s:find(list, id) abort
-  for l:x in a:list
-    if l:x.id ==# a:id
-      return l:x
-    endif
-  endfor
-  return v:null
 endfunction
 
 function! s:same(a, b) abort
@@ -177,13 +174,29 @@ function! s:transform(entries, delete_ids, now, data) abort
         \ 'favorite_changed': 0, 'deleted': 0}
   let l:id_of = {0: v:null}
   let l:entry_of = {}
+  " id -> item of the original data / index into l:work (no linear scans:
+  " an edit of 1,000 lines would otherwise be quadratic)
+  let l:orig_b = {}
+  for l:b in l:orig.bookmarks
+    let l:orig_b[l:b.id] = l:b
+  endfor
+  let l:orig_f = {}
+  for l:f in l:orig.folders
+    let l:orig_f[l:f.id] = l:f
+  endfor
+  let l:at_b = {}
+  for l:i in range(len(l:work.bookmarks))
+    let l:at_b[l:work.bookmarks[l:i].id] = l:i
+  endfor
+  let l:at_f = {}
+  for l:i in range(len(l:work.folders))
+    let l:at_f[l:work.folders[l:i].id] = l:i
+  endfor
 
   for l:e0 in a:entries
     let l:e = copy(l:e0)
     if l:e.id !=# ''
-      let l:exists = l:e.kind ==# 'folder'
-            \ ? webmarks#app#store#find_folder(l:orig, l:e.id) isnot v:null
-            \ : webmarks#app#store#find_bookmark(l:orig, l:e.id) isnot v:null
+      let l:exists = has_key(l:e.kind ==# 'folder' ? l:orig_f : l:orig_b, l:e.id)
       if !l:exists
         call add(l:warnings, printf('line %d: %s was removed elsewhere; added again as new', l:e.lnum, l:e.id))
         let l:e.id = ''
@@ -200,12 +213,13 @@ function! s:transform(entries, delete_ids, now, data) abort
           let l:id_of[l:e.lnum] = l:id
           continue
         endif
-        let l:work.folders = l:work.folders + [l:r.folder]
+        let l:at_f[l:id] = len(l:work.folders)
+        call add(l:work.folders, l:r.folder)
         let l:counts.added += 1
       else
         let l:id = l:e.id
-        let l:before = webmarks#app#store#find_folder(l:orig, l:id)
-        let l:f = webmarks#app#store#find_folder(l:work, l:id)
+        let l:before = l:orig_f[l:id]
+        let l:f = l:work.folders[l:at_f[l:id]]
         let l:r = webmarks#domain#folder#rename(l:f, l:e.name)
         if !l:r.ok
           call s:error(l:errors, l:e.lnum, l:r.code, l:r.error)
@@ -217,7 +231,7 @@ function! s:transform(entries, delete_ids, now, data) abort
           let l:f = webmarks#domain#folder#set_parent(l:f, l:parent).folder
           let l:counts.moved += 1
         endif
-        let l:work = webmarks#app#store#put_folder(l:work, l:f)
+        let l:work.folders[l:at_f[l:id]] = l:f
       endif
       let l:id_of[l:e.lnum] = l:id
       let l:entry_of[l:id] = l:e
@@ -236,7 +250,8 @@ function! s:transform(entries, delete_ids, now, data) abort
       if l:e.favorite
         let l:b = webmarks#domain#bookmark#toggle_favorite(l:b).bookmark
       endif
-      let l:work.bookmarks = l:work.bookmarks + [l:b]
+      let l:at_b[l:id] = len(l:work.bookmarks)
+      call add(l:work.bookmarks, l:b)
       let l:counts.added += 1
       if l:b.name_source ==# 'url'
         call add(l:fetch, {'id': l:id, 'url': l:b.url})
@@ -245,8 +260,8 @@ function! s:transform(entries, delete_ids, now, data) abort
       continue
     endif
     let l:id = l:e.id
-    let l:before = webmarks#app#store#find_bookmark(l:orig, l:id)
-    let l:b = webmarks#app#store#find_bookmark(l:work, l:id)
+    let l:before = l:orig_b[l:id]
+    let l:b = l:work.bookmarks[l:at_b[l:id]]
     let l:refetch = 0
     if l:e.url !=# l:before.url
       let l:r = webmarks#domain#bookmark#change_url(l:b, l:e.url)
@@ -288,7 +303,7 @@ function! s:transform(entries, delete_ids, now, data) abort
     if l:refetch
       call add(l:fetch, {'id': l:id, 'url': l:b.url})
     endif
-    let l:work = webmarks#app#store#put_bookmark(l:work, l:b)
+    let l:work.bookmarks[l:at_b[l:id]] = l:b
     let l:entry_of[l:id] = l:e
   endfor
 
@@ -316,14 +331,15 @@ function! s:transform(entries, delete_ids, now, data) abort
     if !l:v.ok
       call s:error(l:errors, s:lnum_in(l:v.error, l:entry_of), 'depth_exceeded', l:v.error)
     endif
-    let l:seen = []
+    " the find_duplicate rule (exact match), indexed by URL
+    let l:owner = {}
     for l:b in l:work.bookmarks
-      let l:dup = webmarks#domain#bookmark#find_duplicate(l:seen, l:b.url, v:null)
-      if l:dup isnot v:null
-        let l:e = get(l:entry_of, l:b.id, get(l:entry_of, l:dup.id, {'lnum': 0}))
+      if has_key(l:owner, l:b.url)
+        let l:e = get(l:entry_of, l:b.id, get(l:entry_of, l:owner[l:b.url], {'lnum': 0}))
         call s:error(l:errors, l:e.lnum, 'duplicate_url', 'already registered: ' . l:b.url)
+      else
+        let l:owner[l:b.url] = l:b.id
       endif
-      call add(l:seen, l:b)
     endfor
   endif
 
