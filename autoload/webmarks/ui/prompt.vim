@@ -30,7 +30,7 @@ endfunction
 function! s:injected(name) abort
   let l:test = get(g:, 'webmarks_test', {})
   let l:p = type(l:test) == v:t_dict ? get(l:test, 'prompt', v:null) : v:null
-  if type(l:p) == v:t_dict && has_key(l:p, a:name)
+  if type(l:p) == v:t_dict && type(get(l:p, a:name, 0)) == v:t_func
     return l:p[a:name]
   endif
   return v:null

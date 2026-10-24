@@ -15,7 +15,8 @@ let s:max_bytes = 1048576
 
 function! s:fetcher() abort
   let l:test = get(g:, 'webmarks_test', {})
-  return type(l:test) == v:t_dict && has_key(l:test, 'title_fetcher') ? l:test.title_fetcher : v:null
+  return type(l:test) == v:t_dict && type(get(l:test, 'title_fetcher', 0)) == v:t_func
+        \ ? l:test.title_fetcher : v:null
 endfunction
 
 function! webmarks#deps#title#available() abort

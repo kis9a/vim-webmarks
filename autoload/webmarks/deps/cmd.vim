@@ -37,7 +37,7 @@ function! webmarks#deps#cmd#run(argv, opts) abort
           \ 'exit_code': -1, 'stdout': ''}
   endif
   let l:test = get(g:, 'webmarks_test', {})
-  if type(l:test) == v:t_dict && has_key(l:test, 'cmd_runner')
+  if type(l:test) == v:t_dict && type(get(l:test, 'cmd_runner', 0)) == v:t_func
     let l:r = call(l:test.cmd_runner, [a:argv, a:opts])
     let l:code = get(l:r, 'exit_code', get(l:r, 'ok', 1) ? 0 : 1)
     return s:result(l:code, get(l:r, 'stdout', ''))

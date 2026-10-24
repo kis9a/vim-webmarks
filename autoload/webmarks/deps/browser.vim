@@ -45,7 +45,7 @@ endfunction
 
 function! s:stubbed() abort
   let l:test = get(g:, 'webmarks_test', {})
-  return type(l:test) == v:t_dict && has_key(l:test, 'cmd_runner')
+  return type(l:test) == v:t_dict && type(get(l:test, 'cmd_runner', 0)) == v:t_func
 endfunction
 
 function! webmarks#deps#browser#open(url) abort
