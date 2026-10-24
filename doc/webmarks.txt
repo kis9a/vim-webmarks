@@ -280,8 +280,11 @@ An invalid value is reported once and the default is used.
 	let g:webmarks_browser_cmd = 'chromium'
 <	Detected in this order: `open` on macOS, `wslview`, `xdg-open`,
 	`rundll32 url.dll,FileProtocolHandler` on Windows. The command is run
-	without a shell (on Vim 8.2 to 9.1, where |system()| cannot take a
-	List, the arguments are |shellescape()|d).
+	without a shell: in Vim as a job (|+job|; webmarks waits up to 5
+	seconds for the command itself, not for a browser it starts, and the
+	browser outlives Vim), in Neovim with |system()| and a List. Only a
+	Vim without |+job| (and before List support in |system()|) runs it
+	through the shell, with |shellescape()|d arguments.
 
 *g:webmarks_fetch_title*	(default: `1`)
 	Fetch the page title when a bookmark is added without a name. `0`
@@ -416,19 +419,26 @@ The groups are linked with |:hi-default|, so your colorscheme or a
   one-second resolution).
 - Opening and recording are two steps: when the record cannot be saved,
   the page is open but the launch is not counted (you get a warning).
-- `xdg-open` may, on some desktops, not return until the browser exits;
-  Vim waits for it. Set |g:webmarks_browser_cmd| to a command that
-  returns at once if this happens.
+- `xdg-open` may, on some desktops, not return until the browser exits.
+  Vim stops waiting after 5 seconds (the browser keeps running); Neovim
+  waits until the command returns. Set |g:webmarks_browser_cmd| to a
+  command that returns at once if this happens.
 - Windows is best effort: the atomic rename, `rundll32` and the default
   path `~/.local/share/webmarks` (not %APPDATA%) are not tested.
 - Titles of non-UTF-8 pages are not converted (the URL stays the name).
+- Emoji joined with ZWJ (U+200D) are stored as they are; Neovim draws
+  them as one picture, Vim as the separate parts.
 - Edit mode: |:w| applies only what you changed in a line, compared with
   what the buffer showed when edit mode began; a title that arrived or a
   change another Vim made meanwhile to another field is kept. A field you
   changed overwrites what another Vim did to that same field. Bookmarks
   another Vim added are kept; one it deleted is added again (with a
-  warning). A new line ending in `/` without a URL is a folder; a
-  bookmark name cannot end with a word that looks like a URL.
+  warning). A line whose last word is an http(s) URL is a bookmark (the
+  name may contain URL-like words before it); a new line ending in `/`
+  without a URL is a folder, so a new folder whose name ends with a
+  URL-like word reads as a bookmark (an existing folder keeps its kind:
+  its hidden id decides). Text typed after the hidden id at the end of a
+  line (|A|) is an error: edit before it.
   |:wq|, |:x| and |:update| go through the same apply; an unchanged
   buffer is not written, so |:x| just closes the window.
 - Lazy loading: with vim-plug's `on:` option, `<Plug>` mappings and

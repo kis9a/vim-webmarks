@@ -81,6 +81,7 @@ cursor goes to the line. `:e!` discards. See `:help webmarks-edit`.
 | `webmarks#open([how])` | `:Webmarks` |
 | `webmarks#toggle([how])` | `:WebmarksToggle` |
 | `webmarks#add(url, name, folder_id)` | Add a bookmark (`folder_id`: `'f3'` or `v:null`) |
+| `webmarks#add_command(args)` | What `:WebmarksAdd` runs |
 | `webmarks#search()` | `:WebmarksSearch` |
 | `webmarks#edit([how])` | `:WebmarksEdit` |
 | `webmarks#reload()` | Read the file again |
@@ -122,7 +123,7 @@ augroup END
 ### Privacy
 
 Adding a bookmark without a name sends one HTTP(S) GET to that URL to read
-its `<title>` (user agent `vim-webmarks/1.0`, http/https only, at most
+its `<title>` (user agent `Mozilla/5.0 (compatible; vim-webmarks/1.0)`, http/https only, at most
 1 MiB). This is on by default; turn it off with
 `let g:webmarks_fetch_title = 0`. See `:help webmarks-privacy`.
 
