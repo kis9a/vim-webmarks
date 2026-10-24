@@ -70,3 +70,14 @@ function! s:suite.real_command_echo() abort
   let g:webmarks_browser_cmd = ['false']
   call s:assert.equals(webmarks#deps#browser#open('https://a.example').code, 'browser_failed')
 endfunction
+
+function! s:suite.a_command_that_leaves_a_child_running_returns_at_once() abort
+  " like xdg-open starting a browser: the child keeps running
+  unlet g:webmarks_test.cmd_runner
+  let g:webmarks_browser_cmd = ['sh', '-c', 'sleep 3 & exit 0', 'sh']
+  let l:start = reltime()
+  call s:assert.true(webmarks#deps#browser#open('https://a.example').ok)
+  call s:assert.true(reltimefloat(reltime(l:start)) < 1.5)
+  let g:webmarks_browser_cmd = ['sh', '-c', 'exit 5', 'sh']
+  call s:assert.equals(webmarks#deps#browser#open('https://a.example').code, 'browser_failed')
+endfunction

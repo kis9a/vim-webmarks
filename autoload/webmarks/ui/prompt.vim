@@ -44,9 +44,14 @@ function! s:answer(raw) abort
   return s:ok(a:raw)
 endfunction
 
+" Is there someone to answer a prompt? Neovim: an attached UI (a headless
+" Neovim started from a terminal still has 'ttyin'). Vim: a terminal and
+" not Ex mode (vim -e -s reads the script, not the keyboard), or the GUI.
 function! webmarks#ui#prompt#has_tty() abort
-  return has('ttyin') || has('gui_running')
-        \ || (has('nvim') && exists('*nvim_list_uis') && !empty(nvim_list_uis()))
+  if has('nvim')
+    return exists('*nvim_list_uis') && !empty(nvim_list_uis())
+  endif
+  return has('gui_running') || (has('ttyin') && has('ttyout') && mode(1) !~# '^c[ve]')
 endfunction
 
 " text(prompt, default) -> Result {value}
@@ -86,23 +91,11 @@ function! webmarks#ui#prompt#choose_folder(data, exclude_id) abort
   if !webmarks#ui#prompt#has_tty()
     return s:no_tty()
   endif
-  let l:skip = {}
-  if a:exclude_id isnot v:null
-    let l:skip[a:exclude_id] = 1
-    for l:f in webmarks#domain#folder#descendants(a:data.folders, a:exclude_id)
-      let l:skip[l:f.id] = 1
-    endfor
-  endif
   let l:choices = [v:null]
   let l:lines = ['Move to:', '1. / (root)']
-  for l:top in webmarks#domain#folder#children(a:data.folders, v:null)
-    for l:f in [l:top] + webmarks#domain#folder#children(a:data.folders, l:top.id)
-      if !has_key(l:skip, l:f.id)
-        call add(l:choices, l:f.id)
-        call add(l:lines, printf('%d. %s/', len(l:choices),
-              \ webmarks#domain#folder#path(a:data.folders, l:f.id)))
-      endif
-    endfor
+  for l:c in webmarks#app#folder#choices(a:data, a:exclude_id)
+    call add(l:choices, l:c.id)
+    call add(l:lines, printf('%d. %s/', len(l:choices), l:c.path))
   endfor
   redraw
   try

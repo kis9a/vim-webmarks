@@ -184,3 +184,13 @@ function! s:suite.validate_drops_unknown_keys() abort
   let l:b.extra = 1
   call s:assert.false(has_key(webmarks#domain#bookmark#validate(l:b).value, 'extra'))
 endfunction
+
+function! s:suite.validate_rejects_huge_ids() abort
+  let l:b = s:new()
+  let l:b.id = 'b99999999999999999999'
+  call s:assert.equals(webmarks#domain#bookmark#validate(l:b).code, 'invalid_data')
+  let l:b.id = 'b0'
+  call s:assert.equals(webmarks#domain#bookmark#validate(l:b).code, 'invalid_data')
+  let l:b.id = 'b999999999'
+  call s:assert.true(webmarks#domain#bookmark#validate(l:b).ok)
+endfunction

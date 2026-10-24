@@ -171,7 +171,7 @@ function! webmarks#domain#bookmark#validate(b) abort
     return s:invalid('?', 'not an object')
   endif
   let l:id = get(a:b, 'id', v:null)
-  if type(l:id) != v:t_string || l:id !~# '^b\d\+$'
+  if type(l:id) != v:t_string || l:id !~# '^b[1-9]\d\{0,8}$'
     return s:invalid(string(l:id), 'bad id')
   endif
   let l:url = get(a:b, 'url', v:null)
@@ -189,7 +189,7 @@ function! webmarks#domain#bookmark#validate(b) abort
     return s:invalid(l:id, 'bad name_source')
   endif
   let l:folder = get(a:b, 'folder_id', 0)
-  if l:folder isnot v:null && (type(l:folder) != v:t_string || l:folder !~# '^f\d\+$')
+  if l:folder isnot v:null && (type(l:folder) != v:t_string || l:folder !~# '^f[1-9]\d\{0,8}$')
     return s:invalid(l:id, 'bad folder_id')
   endif
   let l:fav = get(a:b, 'is_favorite', v:null)

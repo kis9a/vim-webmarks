@@ -11,7 +11,14 @@ let s:max_chars = 200
 " C0 controls, DEL and C1 controls become a space (so "a\tb" stays two
 " words); invisible format characters (zero-width, bidi) are dropped.
 let s:control = '[[:cntrl:]\x7f\u0080-\u009f]'
-let s:invisible = '[\u200b-\u200f\u202a-\u202e\u2066-\u2069\u2028\u2029\ufeff]'
+" Also soft hyphen, combining grapheme joiner, Arabic letter mark, Hangul /
+" Braille fillers, Mongolian vowel separator, word joiner .. invisible plus
+" and (below, by code point: Neovim's regex cannot match them) the tag
+" characters U+E0000..U+E007F: invisible or blank-looking names.
+let s:invisible = '[\u200b-\u200f\u202a-\u202e\u2066-\u2069\u2028\u2029\ufeff'
+      \ . '\u00ad\u034f\u061c\u115f\u1160\u180e\u2060-\u2064\u2800\u3164\uffa0]'
+" The id markers of edit mode can never be part of a name.
+let s:markers = '[\u27e8\u27e9]'
 
 " sanitize(s) -> Result {value}
 "   invalid_text: not valid UTF-8 / not a String
@@ -25,6 +32,12 @@ function! webmarks#domain#text#sanitize(s) abort
   endif
   let l:v = substitute(a:s, s:control, ' ', 'g')
   let l:v = substitute(l:v, s:invisible, '', 'g')
+  let l:v = substitute(l:v, s:markers, '', 'g')
+  if max(str2list(l:v)) >= 0xe0000
+    " code points, not characters: Neovim attaches them to the previous
+    " character as composing characters
+    let l:v = list2str(filter(str2list(l:v), 'v:val < 0xe0000 || v:val > 0xe007f'))
+  endif
   let l:v = trim(substitute(l:v, '\s\+', ' ', 'g'))
   if strchars(l:v) > s:max_chars
     let l:v = trim(strcharpart(l:v, 0, s:max_chars))
@@ -44,7 +57,9 @@ function! webmarks#domain#text#is_utf8(s) abort
   if type(a:s) != v:t_string
     return v:false
   endif
-  if a:s !~# '[^\x01-\x7f]'
+  " pure ASCII. Both checks: Neovim's regex skips a composing character,
+  " and strchars() counts a stray byte as one character.
+  if a:s !~# '[^\x01-\x7f]' && strlen(a:s) == strchars(a:s)
     return v:true
   endif
   for l:c in split(a:s, '\zs')
@@ -52,7 +67,11 @@ function! webmarks#domain#text#is_utf8(s) abort
       return v:false
     endif
   endfor
-  return v:true
+  " encoded surrogates and code points above U+10FFFF: Vim reads them as one
+  " character, Neovim's json_encode()/json_decode() reject them. Checked on
+  " code points, as Neovim may attach a code point to the previous character.
+  return empty(filter(str2list(a:s), '(v:val >= 0xd800 && v:val <= 0xdfff) || v:val > 0x10ffff'))
+    \ ? v:true : v:false
 endfunction
 
 function! s:err(code, msg) abort

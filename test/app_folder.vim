@@ -47,3 +47,13 @@ function! s:suite.remove_only_empty() abort
   call s:assert.true(webmarks#app#folder#remove('f1').ok)
   call s:assert.equals(webmarks#app#folder#remove('f1').code, 'not_found')
 endfunction
+
+function! s:suite.choices_exclude_the_folder_and_its_children() abort
+  call webmarks#app#folder#add('Dev', v:null)
+  call webmarks#app#folder#add('Docs', 'f1')
+  call webmarks#app#folder#add('Art', v:null)
+  let l:data = webmarks#app#store#current()
+  call s:assert.equals(webmarks#app#folder#choices(l:data, v:null),
+        \ [{'id': 'f3', 'path': 'Art'}, {'id': 'f1', 'path': 'Dev'}, {'id': 'f2', 'path': 'Dev/Docs'}])
+  call s:assert.equals(webmarks#app#folder#choices(l:data, 'f1'), [{'id': 'f3', 'path': 'Art'}])
+endfunction

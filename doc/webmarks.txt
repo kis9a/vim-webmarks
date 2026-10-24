@@ -188,6 +188,11 @@ Edit with any Vim command:
 - delete: delete the line (|:w| asks once for all deletions);
 - `#` lines and empty lines are ignored.
 
+A name that starts with `*`, `★`, `#` or `\` is shown with a leading `\`
+(`  \* not a favorite  https://...`) so that it is not read as the star
+slot or a comment; the `\` is not part of the name. Write it the same way
+in a new line.
+
 Indent: a folder line at depth d starts with 2(d-1) spaces, a bookmark in
 it with 2d spaces followed by the 2-column star slot. Use spaces, not
 tabs ('expandtab' and 'shiftwidth' 2 are set, so |>>| and |<<| work).
@@ -196,7 +201,7 @@ tabs ('expandtab' and 'shiftwidth' 2 are set, so |>>| and |<<| work).
 	with line numbers) are listed, the cursor goes to the first one and
 	the buffer stays in edit mode. On success the tree goes back to the
 	view mode.
-|:e!|	discard the edits and go back to the view mode.
+|:e!|	discard the edits, read the file again and go back to the view mode.
 q	leave edit mode if nothing was changed; otherwise warn.
 
 Mappings: the default keys are removed while editing (except `q`) and
@@ -378,11 +383,13 @@ The groups are linked with |:hi-default|, so your colorscheme or a
 - Windows is best effort: the atomic rename, `rundll32` and the default
   path `~/.local/share/webmarks` (not %APPDATA%) are not tested.
 - Titles of non-UTF-8 pages are not converted (the URL stays the name).
-- Edit mode: what the lines say wins when you |:w|; a bookmark another
-  Vim changed meanwhile is overwritten, one it added is kept, one it
-  deleted is added again (with a warning). A name that starts with `★ `
-  or `* ` is read as a favorite; a new line ending in `/` without a URL
-  is a folder; a name cannot end with a word that looks like a URL.
+- Edit mode: |:w| applies only what you changed in a line, compared with
+  what the buffer showed when edit mode began; a title that arrived or a
+  change another Vim made meanwhile to another field is kept. A field you
+  changed overwrites what another Vim did to that same field. Bookmarks
+  another Vim added are kept; one it deleted is added again (with a
+  warning). A new line ending in `/` without a URL is a folder; a
+  bookmark name cannot end with a word that looks like a URL.
   |:wq|, |:x| and |:update| go through the same apply; an unchanged
   buffer is not written, so |:x| just closes the window.
 - Lazy loading: with vim-plug's `on:` option, `<Plug>` mappings and

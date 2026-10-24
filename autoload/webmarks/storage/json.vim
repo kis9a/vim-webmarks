@@ -116,6 +116,10 @@ function! webmarks#storage#json#decode(lines, path) abort
   if type(l:root) != v:t_dict
     return s:invalid(l:file, 'top level is not an object')
   endif
+  " Neovim returns duplicate keys (and NUL in strings) as special dicts
+  if s:has_special(l:root, 0)
+    return s:invalid(l:file, 'duplicate key or NUL character in a string')
+  endif
   let l:ver = get(l:root, 'schema_version', v:null)
   if type(l:ver) != v:t_number || l:ver < 1
     return s:invalid(l:file, 'missing or bad schema_version')
@@ -124,7 +128,7 @@ function! webmarks#storage#json#decode(lines, path) abort
     return s:err('schema_unsupported', printf('unsupported schema_version %d in %s', l:ver, l:file))
   endif
   let l:next = get(l:root, 'next_id', v:null)
-  if type(l:next) != v:t_number || l:next < 1
+  if type(l:next) != v:t_number || l:next < 1 || l:next > 999999999
     return s:invalid(l:file, 'missing or bad next_id')
   endif
   let l:folders_in = get(l:root, 'folders', v:null)
@@ -177,6 +181,31 @@ function! webmarks#storage#json#decode(lines, path) abort
         \ 'folders': l:folders, 'bookmarks': l:bookmarks}})
 endfunction
 
+function! s:has_special(v, depth) abort
+  if a:depth > 4
+    return 0
+  endif
+  if type(a:v) == v:t_dict
+    if has_key(a:v, '_TYPE') && has_key(a:v, '_VAL')
+      return 1
+    endif
+    for l:x in values(a:v)
+      if s:has_special(l:x, a:depth + 1)
+        return 1
+      endif
+    endfor
+  elseif type(a:v) == v:t_list
+    for l:x in a:v
+      if s:has_special(l:x, a:depth + 1)
+        return 1
+      endif
+    endfor
+  elseif type(a:v) == v:t_blob
+    return 1
+  endif
+  return 0
+endfunction
+
 function! s:invalid(file, detail) abort
   return s:err('invalid_data', 'invalid data in ' . a:file . ': ' . a:detail)
 endfunction
@@ -196,11 +225,31 @@ function! webmarks#storage#json#load(path) abort
   if !l:r.ok
     return l:r
   endif
-  " leftovers of a crash, possibly from another pid
-  for l:tmp in glob(a:path . '.tmp.*', 1, 1)
-    call delete(l:tmp)
-  endfor
+  call s:clean_tmp(a:path)
   return s:ok({'data': l:r.data, 'mtime': l:mtime, 'warnings': l:r.warnings, 'fresh': v:false})
+endfunction
+
+" Leftovers of a crash (possibly of another pid): only ours by name, and
+" only old ones, so a save in progress in another Vim is not broken. No
+" glob(): '[' or '*' in the path would be a pattern.
+function! s:clean_tmp(path) abort
+  let l:dir = fnamemodify(a:path, ':h')
+  let l:prefix = fnamemodify(a:path, ':t') . '.tmp.'
+  let l:now = localtime()
+  try
+    let l:names = readdir(l:dir)
+  catch /.*/
+    return
+  endtry
+  for l:name in l:names
+    if strpart(l:name, 0, strlen(l:prefix)) ==# l:prefix
+          \ && strpart(l:name, strlen(l:prefix)) =~# '^\d\+$'
+      let l:tmp = l:dir . '/' . l:name
+      if l:now - getftime(l:tmp) > 60
+        call delete(l:tmp)
+      endif
+    endif
+  endfor
 endfunction
 
 " --- save --------------------------------------------------------------
@@ -220,8 +269,10 @@ function! webmarks#storage#json#save(path, data, expected_mtime) abort
   try
     let l:dir = fnamemodify(a:path, ':h')
     if !isdirectory(l:dir)
-      call mkdir(l:dir, 'p')
+      call mkdir(l:dir, 'p', 0700)
     endif
+    " never write through a leftover (or planted) file or link of that name
+    call delete(l:tmp)
     " no 'b' flag: keep the final newline
     if writefile(l:enc.lines, l:tmp) != 0
       throw 'writefile failed'

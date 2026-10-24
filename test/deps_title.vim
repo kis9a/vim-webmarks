@@ -21,7 +21,7 @@ endfunction
 
 function! s:suite.argv_shape() abort
   let l:argv = webmarks#deps#title#argv('https://a.example/-x')
-  call s:assert.equals(l:argv[0], 'curl')
+  call s:assert.equals(l:argv[0:2], ['curl', '-q', '-g'])
   call s:assert.equals(l:argv[-2:], ['--', 'https://a.example/-x'])
   let l:i = index(l:argv, '--proto-redir')
   call s:assert.equals(l:argv[l:i + 1], '=http,https')

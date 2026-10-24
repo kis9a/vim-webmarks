@@ -250,3 +250,45 @@ function! s:suite.undo_does_not_go_back_to_the_view_text() abort
   silent! undo
   call s:assert.equals(getline(1, '$'), l:lines)
 endfunction
+
+" --- review regressions ----------------------------------------------------
+
+function! s:suite.title_arriving_while_editing_survives_write() abort
+  let s:pending = []
+  let g:webmarks_test.title_fetcher = function('s:defer')
+  call webmarks#add('https://late.example', '', v:null)
+  call s:edit()
+  call webmarks#app#title#on_result({'ok': v:true, 'code': '', 'error': '', 'title': 'Late title'}, s:pending[0])
+  call setline(1, '  Alpha 2  https://a.example' . s:m('b1'))
+  write
+  let l:b = webmarks#app#store#find_bookmark(webmarks#app#store#current(), 'b4')
+  call s:assert.equals([l:b.display_name, l:b.name_source], ['Late title', 'fetched'])
+  call s:assert.match(execute('messages'), 'applied: 1 renamed')
+endfunction
+
+function! s:defer(url, ctx) abort
+  call add(s:pending, a:ctx)
+  return v:null
+endfunction
+
+function! s:suite.q_is_still_listed_after_edit_mode() abort
+  Webmarks
+  let l:keys = copy(b:webmarks.mapped_keys)
+  normal i
+  edit!
+  call s:assert.equals(b:webmarks.mapped_keys, l:keys)
+  call s:assert.match(execute('normal g?'), 'q\s\+close')
+  call s:assert.equals(maparg('a', 'n'), '<Plug>(webmarks-add)')
+endfunction
+
+function! s:suite.reload_bang_shows_what_is_on_disk() abort
+  call s:edit()
+  " another Vim adds a bookmark while we edit
+  let l:cur = webmarks#storage#json#load(g:webmarks_file)
+  let l:d = l:cur.data
+  call add(l:d.bookmarks, extend(copy(l:d.bookmarks[0]), {'id': 'b9', 'url': 'https://z.example', 'display_name': 'Zed'}))
+  let l:d.next_id = 10
+  call webmarks#storage#json#save(g:webmarks_file, l:d, l:cur.mtime)
+  edit!
+  call s:assert.equals(getline(1, '$'), ['  Alpha', '  Zed', 'Dev/', '    Guide'])
+endfunction

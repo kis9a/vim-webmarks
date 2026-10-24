@@ -86,5 +86,27 @@ function! webmarks#app#folder#remove(id) abort
   return webmarks#app#store#mutate(function('s:remove_fn', [a:id]))
 endfunction
 
+" choices(data, exclude_id) -> [{id, path}] in tree order: where something
+" can be moved to. exclude_id (a folder being moved) and its descendants
+" are left out.
+function! webmarks#app#folder#choices(data, exclude_id) abort
+  let l:skip = {}
+  if a:exclude_id isnot v:null
+    let l:skip[a:exclude_id] = 1
+    for l:f in webmarks#domain#folder#descendants(a:data.folders, a:exclude_id)
+      let l:skip[l:f.id] = 1
+    endfor
+  endif
+  let l:out = []
+  for l:top in webmarks#domain#folder#children(a:data.folders, v:null)
+    for l:f in [l:top] + webmarks#domain#folder#children(a:data.folders, l:top.id)
+      if !has_key(l:skip, l:f.id)
+        call add(l:out, {'id': l:f.id, 'path': webmarks#domain#folder#path(a:data.folders, l:f.id)})
+      endif
+    endfor
+  endfor
+  return l:out
+endfunction
+
 let &cpoptions = s:save_cpo
 unlet s:save_cpo

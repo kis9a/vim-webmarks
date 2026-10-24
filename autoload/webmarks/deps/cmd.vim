@@ -9,7 +9,8 @@ let s:save_cpo = &cpoptions
 set cpoptions&vim
 
 " -1 unknown, 0 no, 1 yes: can system() take a List (no shell)?
-" Vim got that in 9.2; 8.2 .. 9.1 raise E730. Neovim always could.
+" Vim got that in a 9.2 patch (listed under version-9.3 in version9.txt);
+" older versions raise E730. Neovim always could. Detected at run time.
 let s:list_argv = -1
 
 function! s:list_argv_supported() abort
@@ -46,6 +47,9 @@ function! webmarks#deps#cmd#run(argv, opts) abort
     return {'ok': v:false, 'code': 'not_executable', 'error': 'command not found: ' . a:argv[0],
           \ 'exit_code': -1, 'stdout': ''}
   endif
+  if get(a:opts, 'no_output', 0) && !has('nvim') && has('job')
+    return s:run_detached(a:argv)
+  endif
   try
     if s:list_argv_supported()
       let l:out = system(a:argv)
@@ -56,6 +60,28 @@ function! webmarks#deps#cmd#run(argv, opts) abort
     return s:result(-1, v:exception)
   endtry
   return s:result(v:shell_error, l:out)
+endfunction
+
+" opts.no_output on Vim: run as a job with all I/O on /dev/null and wait
+" for the process itself only. system() with a List would also wait for a
+" child that keeps stdout open, e.g. a browser started by xdg-open
+" (measured: `sh -c 'sleep 3 &'` blocks 3 s). Gives up waiting after 5 s
+" and reports success: the command is still running, so it did start.
+function! s:run_detached(argv) abort
+  try
+    let l:job = job_start(a:argv, {'in_io': 'null', 'out_io': 'null', 'err_io': 'null'})
+  catch /.*/
+    return s:result(-1, v:exception)
+  endtry
+  let l:start = reltime()
+  while job_status(l:job) ==# 'run' && reltimefloat(reltime(l:start)) < 5.0
+    sleep 10m
+  endwhile
+  let l:status = job_status(l:job)
+  if l:status ==# 'run'
+    return s:result(0, '')
+  endif
+  return s:result(l:status ==# 'fail' ? -1 : job_info(l:job).exitval, '')
 endfunction
 
 " Test helper: force the shell-string path (as on Vim 8.2 .. 9.1).

@@ -58,7 +58,12 @@ function! webmarks#deps#browser#open(url) abort
   if !l:u.ok
     return l:u
   endif
-  let l:r = webmarks#deps#cmd#run(l:cmd.argv + [l:u.value], {})
+  " cmd.exe (Vim before List support, on Windows) expands %VAR% even in
+  " quotes: only allow % as a percent-encoding there
+  if (has('win32') || has('win64')) && l:u.value =~# '%\%(\x\x\)\@!'
+    return s:err('invalid_url', 'invalid URL (a % must start a %XX escape): ' . l:u.value)
+  endif
+  let l:r = webmarks#deps#cmd#run(l:cmd.argv + [l:u.value], {'no_output': 1})
   if l:r.code ==# 'not_executable'
     return s:err('not_executable', l:r.error)
   endif

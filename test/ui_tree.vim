@@ -424,3 +424,22 @@ function! s:suite.no_default_mappings() abort
   call s:assert.equals(maparg('a', 'n'), '')
   call s:assert.not_equals(maparg('<Plug>(webmarks-add)', 'n'), '')
 endfunction
+
+function! s:suite.empty_folder_name_is_reported() abort
+  Webmarks
+  let s:texts = [{'ok': v:true, 'value': ''}]
+  call s:press('A')
+  call s:assert.match(execute('messages'), 'name is empty')
+endfunction
+
+function! s:suite.open_in_place_over_a_modified_buffer_fails_cleanly() abort
+  let g:webmarks_open = 'edit'
+  set nohidden
+  enew
+  call setline(1, 'unsaved')
+  let l:r = webmarks#open()
+  call s:assert.false(l:r.ok)
+  call s:assert.match(l:r.error, 'E37')
+  call s:assert.equals(getline(1), 'unsaved')
+  setlocal nomodified
+endfunction

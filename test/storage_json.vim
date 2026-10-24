@@ -195,11 +195,30 @@ function! s:suite.creates_parent_dir() abort
   call s:assert.true(filereadable(l:deep))
 endfunction
 
+function! s:age(file, seconds) abort
+  call system('touch -t ' . strftime('%Y%m%d%H%M.%S', localtime() - a:seconds) . ' ' . shellescape(a:file))
+endfunction
+
 function! s:suite.load_cleans_stale_tmp() abort
   call webmarks#storage#json#save(s:path, s:sample(), -1)
   call writefile(['junk'], s:path . '.tmp.99999')
+  call s:age(s:path . '.tmp.99999', 120)
+  " a fresh one may be another Vim saving right now
+  call writefile(['busy'], s:path . '.tmp.88888')
+  call writefile(['other'], s:path . '.tmp.notapid')
+  call s:age(s:path . '.tmp.notapid', 120)
   call webmarks#storage#json#load(s:path)
-  call s:assert.equals(glob(s:path . '.tmp.*', 1, 1), [])
+  call s:assert.equals(sort(map(glob(s:path . '.tmp.*', 1, 1), 'fnamemodify(v:val, ":e")')), ['88888', 'notapid'])
+endfunction
+
+function! s:suite.tmp_cleanup_with_pattern_characters_in_path() abort
+  let l:path = s:dir . '/we[ir]d*/bookmarks.json'
+  call s:assert.true(webmarks#storage#json#save(l:path, s:sample(), -1).ok)
+  call writefile(['junk'], l:path . '.tmp.12345')
+  call s:age(l:path . '.tmp.12345', 120)
+  call s:assert.true(webmarks#storage#json#load(l:path).ok)
+  call s:assert.false(filereadable(l:path . '.tmp.12345'))
+  call s:assert.equals(getfperm(fnamemodify(l:path, ':h')), 'rwx------')
 endfunction
 
 function! s:suite.invalid_file_is_not_cleaned_or_overwritten() abort
@@ -224,4 +243,20 @@ function! s:suite.unwritable_dir_is_save_failed() abort
   let l:r = webmarks#storage#json#save(l:ro . '/x/bookmarks.json', s:sample(), -1)
   call setfperm(l:ro, 'rwx------')
   call s:assert.equals(l:r.code, 'save_failed')
+endfunction
+
+function! s:suite.huge_next_id_is_invalid() abort
+  call s:write(['{"schema_version": 1, "next_id": 99999999999, "folders": [], "bookmarks": []}'])
+  call s:assert.equals(webmarks#storage#json#load(s:path).code, 'invalid_data')
+endfunction
+
+function! s:suite.duplicate_key_inside_a_bookmark_is_explained() abort
+  let l:lines = webmarks#storage#json#encode(s:sample()).lines
+  let l:lines = map(l:lines, 'substitute(v:val, ''"name_source": "url"'', ''"name_source": "url", "name_source": "url"'', "")')
+  call s:write(l:lines)
+  let l:r = webmarks#storage#json#load(s:path)
+  call s:assert.false(l:r.ok)
+  if has('nvim')
+    call s:assert.match(l:r.error, 'duplicate key')
+  endif
 endfunction

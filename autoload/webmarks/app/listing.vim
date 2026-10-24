@@ -119,21 +119,27 @@ function! webmarks#app#listing#rows(data, policy, view, now, pending_ids) abort
   return l:rows
 endfunction
 
-" edit_lines(data, policy, now) -> {lines, ids}: the tree as editable
+" edit_lines(data, policy, now) -> {lines, ids, shown}: the tree as editable
 " text (app/edit#parse reads it back). Every line ends with an id marker
 " the UI conceals; a provisional name (= the URL) is left out so the URL
-" is not written twice.
+" is not written twice. shown: id -> {name, url, favorite, parent}, what
+" each line says (app/edit#commit compares against it).
 function! webmarks#app#listing#edit_lines(data, policy, now) abort
   let l:lines = []
   let l:ids = []
+  let l:shown = {}
   for l:row in webmarks#app#listing#rows(a:data, a:policy, 'tree', a:now, [])
     if l:row.kind ==# 'folder'
-      call add(l:lines, repeat('  ', l:row.depth - 1) . s:clean(l:row.folder.name) . '/ ' . s:marker(l:row.id))
+      let l:f = l:row.folder
+      call add(l:lines, repeat('  ', l:row.depth - 1) . s:escape(s:clean(l:f.name)) . '/ ' . s:marker(l:row.id))
+      let l:shown[l:row.id] = {'name': l:f.name, 'parent': l:f.parent_id}
     elseif l:row.kind ==# 'bookmark'
       let l:b = l:row.bookmark
-      let l:name = l:b.name_source ==# 'url' ? '' : s:clean(l:b.display_name) . '  '
+      let l:name = l:b.name_source ==# 'url' ? '' : l:b.display_name
       call add(l:lines, repeat('  ', l:row.depth) . (l:b.is_favorite ? s:star : s:nostar)
-            \ . l:name . l:b.url . ' ' . s:marker(l:row.id))
+            \ . (l:name ==# '' ? '' : s:escape(s:clean(l:name)) . '  ') . l:b.url . ' ' . s:marker(l:row.id))
+      let l:shown[l:row.id] = {'name': l:name, 'url': l:b.url,
+            \ 'favorite': l:b.is_favorite, 'parent': l:b.folder_id}
     else
       continue
     endif
@@ -142,7 +148,13 @@ function! webmarks#app#listing#edit_lines(data, policy, now) abort
   if empty(l:lines)
     call add(l:lines, '# add lines here:  name  https://example.com')
   endif
-  return {'lines': l:lines, 'ids': l:ids}
+  return {'lines': l:lines, 'ids': l:ids, 'shown': l:shown}
+endfunction
+
+" A name that would read as the star slot, a comment or an escape gets a
+" leading backslash (app/edit removes it again).
+function! s:escape(name) abort
+  return a:name =~# '^[*#\\★]' ? '\' . a:name : a:name
 endfunction
 
 function! s:marker(id) abort

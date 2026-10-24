@@ -45,3 +45,15 @@ function! s:suite.empty_after_cleaning() abort
   call s:assert.equals(s:san('').code, 'empty_name')
   call s:assert.equals(s:san(" \t​ ").code, 'empty_name')
 endfunction
+
+function! s:suite.markers_and_more_invisible_characters_are_removed() abort
+  call s:assert.equals(s:san("m⟨b1⟩n").value, 'mb1n')
+  call s:assert.equals(s:san("a­b⠀cㅤd؜e⁠f").value, 'abcdef')
+  call s:assert.equals(s:san("tag\U000e0041z").value, 'tagz')
+endfunction
+
+function! s:suite.surrogates_and_out_of_range_are_invalid() abort
+  " what nr2char() produces for U+D800 and U+110000 in a UTF-8 Vim
+  call s:assert.equals(s:san(nr2char(0xd800, 1)).code, 'invalid_text')
+  call s:assert.equals(s:san('a' . nr2char(0x110000, 1)).code, 'invalid_text')
+endfunction

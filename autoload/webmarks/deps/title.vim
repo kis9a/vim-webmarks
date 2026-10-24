@@ -29,7 +29,8 @@ endfunction
 " The curl command line. Only http(s), also on redirects; the URL comes
 " after `--` so it can never be read as an option.
 function! webmarks#deps#title#argv(url) abort
-  return ['curl', '-fsL', '--compressed',
+  " -q first: ignore ~/.curlrc; -g: '[' ']' in a URL are not ranges
+  return ['curl', '-q', '-g', '-fsL', '--compressed',
         \ '--proto', '=http,https', '--proto-redir', '=http,https', '--max-redirs', '5',
         \ '--connect-timeout', '5', '--max-time', '10', '--max-filesize', string(s:max_bytes),
         \ '-A', 'Mozilla/5.0 (compatible; vim-webmarks/1.0)', '--', a:url]

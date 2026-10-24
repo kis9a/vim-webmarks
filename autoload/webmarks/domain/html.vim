@@ -10,6 +10,12 @@ let s:save_cpo = &cpoptions
 set cpoptions&vim
 
 " decode_entities(text) -> String
+"   The named entities are replaced first, in the original order (so
+"   "&amp;lt;" still becomes "<"), then numeric references in one pass.
+"   Changes from the original: one substitute() per kind instead of one per
+"   reference (the original was quadratic and looped forever on "&#38;",
+"   whose decoded "&" means "the match" in a replacement), and code points
+"   that are not characters (0, surrogates, > U+10FFFF) are dropped.
 function! webmarks#domain#html#decode_entities(text) abort
   let l:result = a:text
   let l:result = substitute(l:result, '&amp;', '\&', 'g')
@@ -18,26 +24,21 @@ function! webmarks#domain#html#decode_entities(text) abort
   let l:result = substitute(l:result, '&quot;', '"', 'g')
   let l:result = substitute(l:result, '&#39;', "'", 'g')
   let l:result = substitute(l:result, '&nbsp;', ' ', 'g')
-
-  while 1
-    let l:match = matchlist(l:result, '&#\(\d\+\);')
-    if empty(l:match)
-      break
-    endif
-    let l:char = nr2char(str2nr(l:match[1]))
-    let l:result = substitute(l:result, '&#' . l:match[1] . ';', escape(l:char, '\&~'), '')
-  endwhile
-
-  while 1
-    let l:match = matchlist(l:result, '\c&#x\(\x\+\);')
-    if empty(l:match)
-      break
-    endif
-    let l:char = nr2char(str2nr(l:match[1], 16))
-    let l:result = substitute(l:result, '\c&#x' . l:match[1] . ';', escape(l:char, '\&~'), '')
-  endwhile
-
+  let l:result = substitute(l:result, '&#\(\d\+\);', '\=s:char(submatch(1), 10)', 'g')
+  let l:result = substitute(l:result, '\c&#x\(\x\+\);', '\=s:char(submatch(1), 16)', 'g')
   return l:result
+endfunction
+
+function! s:char(digits, base) abort
+  " more than 7 digits cannot be a code point (and would overflow)
+  if strlen(substitute(a:digits, '^0\+', '', '')) > 7
+    return ''
+  endif
+  let l:n = str2nr(a:digits, a:base)
+  if l:n <= 0 || (l:n >= 0xd800 && l:n <= 0xdfff) || l:n > 0x10ffff
+    return ''
+  endif
+  return nr2char(l:n, 1)
 endfunction
 
 " extract_title(html) -> String or v:null
@@ -64,6 +65,8 @@ function! webmarks#domain#html#extract_title(html) abort
     endif
     let l:content = matchstr(l:matched, '\c<title\%(\s\+[^>]*\)\?>\s*\zs\_.\{-}\ze\s*</title>')
     let l:content = substitute(l:content, '<[^>]*>', '', 'g')
+    " a title is a line of text; do not decode megabytes of it
+    let l:content = strpart(l:content, 0, 8192)
     let l:content = webmarks#domain#html#decode_entities(l:content)
     let l:content = substitute(l:content, '\_s\+', ' ', 'g')
     let l:content = trim(l:content)

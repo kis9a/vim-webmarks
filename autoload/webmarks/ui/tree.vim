@@ -155,6 +155,15 @@ endfunction
 
 " Map the default keys that the user has not mapped to the action.
 " Returns the keys that were mapped.
+function! s:action_of(key) abort
+  for [l:action, l:key] in s:actions
+    if l:key ==# a:key
+      return l:action
+    endif
+  endfor
+  return ''
+endfunction
+
 function! s:map_default_keys() abort
   let b:webmarks.mapped_keys = []
   if webmarks#ui#tree#option('no_default_mappings')
@@ -293,7 +302,8 @@ function! s:render_buffer(buf) abort
   let l:texts = map(copy(l:rows), 'v:val.text')
   call setbufvar(a:buf, '&modifiable', 1)
   call setbufline(a:buf, 1, l:texts)
-  if getbufinfo(a:buf)[0].linecount > len(l:texts)
+  " (not getbufinfo().linecount: Vim 8.2.0019+)
+  if len(getbufline(a:buf, 1, '$')) > len(l:texts)
     silent call deletebufline(a:buf, len(l:texts) + 1, '$')
   endif
   call setbufvar(a:buf, '&modifiable', 0)
@@ -338,6 +348,11 @@ endfunction
 " this: it always contains 'c' inside a timer or job callback (measured),
 " so a check on it would never let the deferred redraw run.
 function! s:busy() abort
+  " Ex mode (vim -e, gQ) is a command line too, but it never ends while a
+  " script runs; redraw there
+  if mode(1) =~# '^c[ve]'
+    return 0
+  endif
   if getcmdtype() !=# '' || mode(1) =~# '^c'
     return 2
   endif
@@ -417,16 +432,23 @@ function! webmarks#ui#tree#open() abort
     call win_gotoid(l:wins[0])
   else
     let l:how = webmarks#ui#tree#option('open')
-    if l:how ==# 'vsplit'
-      execute 'silent vertical topleft sbuffer' l:buf
-      execute 'vertical resize' webmarks#ui#tree#option('width')
-    elseif l:how ==# 'split'
-      execute 'silent topleft sbuffer' l:buf
-    elseif l:how ==# 'tab'
-      execute 'silent tab sbuffer' l:buf
-    else
-      execute 'silent buffer' l:buf
-    endif
+    try
+      if l:how ==# 'vsplit'
+        execute 'silent vertical topleft sbuffer' l:buf
+        execute 'vertical resize' webmarks#ui#tree#option('width')
+      elseif l:how ==# 'split'
+        execute 'silent topleft sbuffer' l:buf
+      elseif l:how ==# 'tab'
+        execute 'silent tab sbuffer' l:buf
+      else
+        execute 'silent buffer' l:buf
+      endif
+    catch /^Vim\%((\a\+)\)\=:E/
+      " e.g. E37 with g:webmarks_open = 'edit' and a modified buffer
+      let l:msg = substitute(v:exception, '^Vim\%((\a\+)\)\=:', '', '')
+      call webmarks#compat#notify#error(l:msg)
+      return {'ok': v:false, 'code': 'open_failed', 'error': l:msg, 'changed': v:false}
+    endtry
   endif
   if !exists('b:webmarks')
     call s:init_buffer()
@@ -533,6 +555,11 @@ endfunction
 function! webmarks#ui#tree#on_read() abort
   if !exists('b:webmarks')
     return
+  endif
+  " :e! / :e means "show me what is on disk now"
+  let l:r = webmarks#app#store#reload()
+  if !l:r.ok
+    call webmarks#compat#notify#error(l:r.error)
   endif
   if b:webmarks.mode ==# 'edit'
     setlocal nomodified
@@ -651,7 +678,7 @@ endfunction
 function! s:do_add_folder() abort
   let l:parent = s:target_folder()
   let l:name = webmarks#ui#prompt#text('Folder name: ', '')
-  if !s:report(l:name) || trim(l:name.value) ==# ''
+  if !s:report(l:name)
     return
   endif
   let l:r = webmarks#app#folder#add(l:name.value, l:parent)
@@ -866,7 +893,7 @@ function! webmarks#ui#tree#enter_edit() abort
   call s:render_buffer(l:buf)
   let l:edit = webmarks#app#listing#edit_lines(webmarks#app#store#current(), b:webmarks.policy,
         \ webmarks#compat#clock#now())
-  let b:webmarks.edit = {'snapshot_ids': l:edit.ids,
+  let b:webmarks.edit = {'snapshot_ids': l:edit.ids, 'shown': l:edit.shown,
         \ 'mapped_keys': filter(copy(b:webmarks.mapped_keys), 'v:val !=# "q"'), 'dirty': 0}
   let b:webmarks.mode = 'edit'
   " still undolevels=-1 here: the view text cannot be undone into
@@ -915,7 +942,13 @@ function! webmarks#ui#tree#leave_edit() abort
     call win_execute(l:winid, 'call s:edit_window_off()')
   endfor
   setlocal undolevels=-1 nomodifiable expandtab< shiftwidth< softtabstop<
-  call s:map_default_keys()
+  " map back exactly the keys enter_edit() removed (q stayed mapped)
+  for l:key in b:webmarks.edit.mapped_keys
+    let l:action = s:action_of(l:key)
+    if l:action !=# '' && !hasmapto('<Plug>(webmarks-' . l:action . ')', 'n')
+      execute 'nmap <buffer> <nowait>' l:key '<Plug>(webmarks-' . l:action . ')'
+    endif
+  endfor
   let b:webmarks.edit.dirty = 0
   call webmarks#ui#tree#render()
   setlocal nomodified
@@ -933,7 +966,8 @@ function! webmarks#ui#tree#_edit_write() abort
     call webmarks#compat#notify#warn('cancelled')
     return
   endif
-  let l:r = webmarks#app#edit#commit(l:p.entries, l:p.delete_ids, webmarks#compat#clock#now())
+  let l:r = webmarks#app#edit#commit(l:p.entries, l:p.delete_ids, webmarks#compat#clock#now(),
+        \ get(b:webmarks.edit, 'shown', {}))
   if !l:r.ok
     call s:show_errors(l:r)
     return

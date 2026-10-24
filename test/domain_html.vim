@@ -182,3 +182,17 @@ endfunction
 function! s:suite.test_decoded_ampersand_and_backslash() abort
   call s:assert.equal(webmarks#domain#html#decode_entities('a&#38;b &#92;n'), 'a&b \n')
 endfunction
+
+" Added (review): code points that are not characters are dropped
+function! s:suite.test_invalid_code_points_dropped() abort
+  call s:assert.equal(webmarks#domain#html#decode_entities('a&#xD800;b&#x110000;c&#0;d&#99999999999999999999;e'), 'abcde')
+endfunction
+
+" Added (review): many references decode in linear time
+function! s:suite.test_many_references_are_fast() abort
+  let l:html = '<title>' . repeat('&#65;', 20000) . '</title>'
+  let l:start = reltime()
+  let l:t = webmarks#domain#html#extract_title(l:html)
+  call s:assert.true(reltimefloat(reltime(l:start)) < 1.0)
+  call s:assert.match(l:t, '^A\{100,}')
+endfunction

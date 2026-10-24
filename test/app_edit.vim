@@ -103,7 +103,7 @@ function! s:suite.tabs_and_bad_lines() abort
   call s:assert.equals(s:err(['A/', '  B/', '    C/']).code, 'depth_exceeded')
   call s:assert.equals(s:err(['/']).code, 'empty_name')
   call s:assert.match(s:err(['Dev/' . s:m('b1')]).error, 'belongs to a bookmark')
-  call s:assert.match(s:err(['  x  https://a.example' . s:m('f1')]).error, 'belongs to a folder')
+  call s:assert.match(s:err(['  x  https://a.example' . s:m('f1')]).error, 'a folder line must end with /')
 endfunction
 
 function! s:suite.parent_must_be_one_level_up() abort
@@ -314,4 +314,63 @@ function! s:suite.deleting_a_folder_line_reparents_its_lines() abort
   call s:assert.true(l:r.ok, string(l:r))
   call s:assert.equals(s:folder('f4'), v:null)
   call s:assert.equals(l:r.counts.deleted, 1)
+endfunction
+
+" --- review regressions ----------------------------------------------------
+
+function! s:suite.hostile_names_round_trip_without_change() abort
+  " names that look like the star slot, a comment, an escape or a URL
+  call webmarks#app#folder#add('Dev', v:null)
+  call webmarks#app#folder#add('Sub', 'f1')
+  call webmarks#app#folder#add('# not a comment', v:null)
+  call webmarks#app#folder#add('see https://x.example', v:null)
+  let l:names = ['* star', "★ star", '# hash', '\back', 'ends https://y.example']
+  let l:n = 0
+  for l:folder in [v:null, 'f1', 'f2']
+    for l:name in l:names
+      let l:n += 1
+      call webmarks#app#bookmark#add(printf('https://h%d.example', l:n), l:name, l:folder, 1)
+    endfor
+  endfor
+  let l:before = webmarks#app#store#current()
+  let l:e = s:lines()
+  let l:p = webmarks#app#edit#parse(l:e.lines, l:e.ids)
+  call s:assert.true(l:p.ok, string(l:p))
+  let l:r = webmarks#app#edit#commit(l:p.entries, l:p.delete_ids, 2000, l:e.shown)
+  call s:assert.true(l:r.ok, string(l:r))
+  call s:assert.false(l:r.changed, string(get(l:r, 'counts', {})))
+  call s:assert.equals(webmarks#app#store#current(), l:before)
+endfunction
+
+function! s:suite.untouched_fields_keep_changes_made_meanwhile() abort
+  call s:seed()
+  let l:e = s:lines()
+  " while editing: the title of b3 arrives, another Vim favourites b1
+  call webmarks#app#bookmark#apply_title('b3', 'https://g.example', function('WebmarksTestConst', [1]), 'Late title')
+  call webmarks#app#bookmark#toggle_favorite('b1')
+  let l:lines = copy(l:e.lines)
+  " the user only renames the folder
+  let l:lines[1] = 'Development/' . s:m('f2')
+  let l:p = webmarks#app#edit#parse(l:lines, l:e.ids)
+  let l:r = webmarks#app#edit#commit(l:p.entries, l:p.delete_ids, 2000, l:e.shown)
+  call s:assert.true(l:r.ok, string(l:r))
+  call s:assert.equals([s:get('b3').display_name, s:get('b3').name_source], ['Late title', 'fetched'])
+  call s:assert.true(s:get('b1').is_favorite)
+  call s:assert.equals(s:folder('f2').name, 'Development')
+  call s:assert.equals(l:r.fetch_title, [])
+  call s:assert.equals(l:r.counts.renamed, 1)
+endfunction
+
+function! s:suite.folder_marker_decides_the_kind() abort
+  let l:e = s:one('see https://x.example/' . s:m('f3'))
+  call s:assert.equals([l:e.kind, l:e.name], ['folder', 'see https://x.example'])
+  " without a marker the URL wins
+  call s:assert.equals(s:one('  see https://x.example/').kind, 'bookmark')
+endfunction
+
+function! s:suite.escaped_names_are_unescaped() abort
+  call s:assert.equals(s:one('  \* star  https://a.example').name, '* star')
+  call s:assert.false(s:one('  \* star  https://a.example').favorite)
+  call s:assert.equals(s:one('\# hash/').name, '# hash')
+  call s:assert.equals(s:one('  \\back  https://a.example').name, '\back')
 endfunction

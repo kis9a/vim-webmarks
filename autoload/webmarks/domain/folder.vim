@@ -201,7 +201,7 @@ function! webmarks#domain#folder#validate(f) abort
     return s:invalid('?', 'not an object')
   endif
   let l:id = get(a:f, 'id', v:null)
-  if type(l:id) != v:t_string || l:id !~# '^f\d\+$'
+  if type(l:id) != v:t_string || l:id !~# '^f[1-9]\d\{0,8}$'
     return s:invalid(string(l:id), 'bad id')
   endif
   let l:name = get(a:f, 'name', v:null)
@@ -210,7 +210,7 @@ function! webmarks#domain#folder#validate(f) abort
     return s:invalid(l:id, 'bad name')
   endif
   let l:parent = get(a:f, 'parent_id', 0)
-  if l:parent isnot v:null && (type(l:parent) != v:t_string || l:parent !~# '^f\d\+$')
+  if l:parent isnot v:null && (type(l:parent) != v:t_string || l:parent !~# '^f[1-9]\d\{0,8}$')
     return s:invalid(l:id, 'bad parent_id')
   endif
   return s:ok({'changed': v:false, 'value': {'id': l:id, 'name': l:name, 'parent_id': l:parent}})

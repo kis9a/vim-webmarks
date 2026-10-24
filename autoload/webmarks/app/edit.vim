@@ -3,7 +3,7 @@ scriptencoding utf-8
 " difference in one store#mutate (all or nothing).
 "
 "   parse(lines, snapshot_ids)      -> Result {entries, delete_ids, errors}
-"   commit(entries, delete_ids, now) -> Result {fetch_title, warnings, counts}
+"   commit(entries, delete_ids, now, shown) -> Result {fetch_title, warnings, counts}
 "
 " The UI asks for the delete confirmation between the two (app never
 " prompts).
@@ -54,7 +54,8 @@ function! s:parse_line(text) abort
   " token, when it starts with http(s)://, is the URL (s:url_token; this
   " form avoids a slow backtracking regex on every line).
   let l:url = matchstr(l:line, '\S\+$')
-  if l:url =~# '^https\?://'
+  " a folder marker decides (a folder name may end with a URL-like word)
+  if l:id !~# '^f' && l:url =~# '^https\?://'
     let l:rest = strpart(l:line, 0, strlen(l:line) - strlen(l:url))
     let l:h = matchlist(l:rest, s:bookmark_head)
     if empty(l:h) || strlen(l:h[1]) % 2
@@ -64,11 +65,8 @@ function! s:parse_line(text) abort
     if !l:u.ok
       return {'code': 'invalid_url', 'msg': l:u.error}
     endif
-    if l:id =~# '^f'
-      return {'code': 'parse_error', 'msg': 'id ' . l:id . ' belongs to a folder'}
-    endif
     return {'kind': 'bookmark', 'id': l:id, 'depth': strlen(l:h[1]) / 2,
-          \ 'name': trim(l:h[3]), 'url': l:u.value, 'favorite': l:h[2] ==# '  ' ? v:false : v:true}
+          \ 'name': s:unescape(trim(l:h[3])), 'url': l:u.value, 'favorite': l:h[2] ==# '  ' ? v:false : v:true}
   endif
   if l:line =~# '/$'
     let l:h = matchlist(strpart(l:line, 0, strlen(l:line) - 1), '^\( *\)\(.*\)$')
@@ -79,16 +77,25 @@ function! s:parse_line(text) abort
     if l:depth > 2
       return {'code': 'depth_exceeded', 'msg': 'folders are limited to 2 levels'}
     endif
-    if trim(l:h[2]) ==# ''
+    if s:unescape(trim(l:h[2])) ==# ''
       return {'code': 'empty_name', 'msg': 'folder name is empty'}
     endif
     if l:id =~# '^b'
       return {'code': 'parse_error', 'msg': 'id ' . l:id . ' belongs to a bookmark'}
     endif
-    return {'kind': 'folder', 'id': l:id, 'depth': l:depth, 'name': trim(l:h[2]),
+    return {'kind': 'folder', 'id': l:id, 'depth': l:depth, 'name': s:unescape(trim(l:h[2])),
           \ 'url': '', 'favorite': v:false}
   endif
+  if l:id =~# '^f'
+    return {'code': 'parse_error', 'msg': 'a folder line must end with /'}
+  endif
   return {'code': 'parse_error', 'msg': 'URL is required (or end the line with / for a folder)'}
+endfunction
+
+" app/listing#edit_lines writes a name that starts with '*', '★', '#' or
+" '\' with a leading '\' (else it would read as the star slot or a comment)
+function! s:unescape(name) abort
+  return a:name =~# '^\\' ? a:name[1:] : a:name
 endfunction
 
 " The column that decides nesting: a folder at depth d sits at 2(d-1),
@@ -153,8 +160,14 @@ endfunction
 
 " --- commit ------------------------------------------------------------
 
-function! webmarks#app#edit#commit(entries, delete_ids, now) abort
-  return webmarks#app#store#mutate(function('s:transform', [a:entries, a:delete_ids, a:now]))
+" commit(entries, delete_ids, now [, shown])
+"   shown: id -> {name, url, favorite, parent} as the buffer showed it when
+"   edit mode began (app/listing#edit_lines). A field is changed only when
+"   its line differs from what was shown, so a title that arrived or a
+"   change another Vim made meanwhile is not undone by an unrelated :w.
+function! webmarks#app#edit#commit(entries, delete_ids, now, ...) abort
+  return webmarks#app#store#mutate(function('s:transform',
+        \ [a:entries, a:delete_ids, a:now, get(a:000, 0, {})]))
 endfunction
 
 function! s:same(a, b) abort
@@ -162,9 +175,10 @@ function! s:same(a, b) abort
 endfunction
 
 " Plan and apply in one go against the freshly read {data}; returns the
-" new data (the mutate contract). Fields are compared with the data as it
-" was before this edit, never with values changed earlier in the loop.
-function! s:transform(entries, delete_ids, now, data) abort
+" new data (the mutate contract). A line is compared with what was shown
+" (or, for an id that was not shown, with the data before this edit), never
+" with values changed earlier in the loop.
+function! s:transform(entries, delete_ids, now, shown, data) abort
   let l:orig = a:data
   let l:work = deepcopy(a:data)
   let l:errors = []
@@ -219,15 +233,18 @@ function! s:transform(entries, delete_ids, now, data) abort
       else
         let l:id = l:e.id
         let l:before = l:orig_f[l:id]
+        let l:was = get(a:shown, l:id, {'name': l:before.name, 'parent': l:before.parent_id})
         let l:f = l:work.folders[l:at_f[l:id]]
-        let l:r = webmarks#domain#folder#rename(l:f, l:e.name)
-        if !l:r.ok
-          call s:error(l:errors, l:e.lnum, l:r.code, l:r.error)
-        elseif l:r.folder.name !=# l:before.name
-          let l:f = l:r.folder
-          let l:counts.renamed += 1
+        if l:e.name !=# l:was.name
+          let l:r = webmarks#domain#folder#rename(l:f, l:e.name)
+          if !l:r.ok
+            call s:error(l:errors, l:e.lnum, l:r.code, l:r.error)
+          elseif l:r.folder.name !=# l:f.name
+            let l:f = l:r.folder
+            let l:counts.renamed += 1
+          endif
         endif
-        if !s:same(l:before.parent_id, l:parent)
+        if !s:same(l:was.parent, l:parent) && !s:same(l:f.parent_id, l:parent)
           let l:f = webmarks#domain#folder#set_parent(l:f, l:parent).folder
           let l:counts.moved += 1
         endif
@@ -261,9 +278,12 @@ function! s:transform(entries, delete_ids, now, data) abort
     endif
     let l:id = l:e.id
     let l:before = l:orig_b[l:id]
+    let l:was = get(a:shown, l:id, {
+          \ 'name': l:before.name_source ==# 'url' ? '' : l:before.display_name,
+          \ 'url': l:before.url, 'favorite': l:before.is_favorite, 'parent': l:before.folder_id})
     let l:b = l:work.bookmarks[l:at_b[l:id]]
     let l:refetch = 0
-    if l:e.url !=# l:before.url
+    if l:e.url !=# l:was.url && l:e.url !=# l:b.url
       let l:r = webmarks#domain#bookmark#change_url(l:b, l:e.url)
       if !l:r.ok
         call s:error(l:errors, l:e.lnum, l:r.code, l:r.error)
@@ -273,30 +293,33 @@ function! s:transform(entries, delete_ids, now, data) abort
       let l:counts.url_changed += 1
       let l:refetch = l:b.name_source ==# 'url'
     endif
-    if l:e.name ==# ''
-      if l:before.name_source !=# 'url'
-        " an emptied name: back to the provisional name and fetch a title
-        let l:b = webmarks#domain#bookmark#reset_name(l:b).bookmark
-        let l:counts.renamed += 1
-        let l:refetch = 1
-      endif
-    elseif l:e.name !=# l:before.display_name || l:before.name_source ==# 'url'
-      let l:r = webmarks#domain#bookmark#rename(l:b, l:e.name)
-      if !l:r.ok
-        call s:error(l:errors, l:e.lnum, l:r.code, l:r.error)
-        continue
-      endif
-      if l:r.bookmark.display_name !=# l:before.display_name || l:before.name_source ==# 'url'
-        let l:b = l:r.bookmark
-        let l:counts.renamed += 1
-        let l:refetch = 0
+    if l:e.name !=# l:was.name
+      if l:e.name ==# ''
+        if l:b.name_source !=# 'url'
+          " an emptied name: back to the provisional name and fetch a title
+          let l:b = webmarks#domain#bookmark#reset_name(l:b).bookmark
+          let l:counts.renamed += 1
+          let l:refetch = 1
+        endif
+      else
+        let l:r = webmarks#domain#bookmark#rename(l:b, l:e.name)
+        if !l:r.ok
+          call s:error(l:errors, l:e.lnum, l:r.code, l:r.error)
+          continue
+        endif
+        if l:r.bookmark.display_name !=# l:b.display_name || l:b.name_source ==# 'url'
+          let l:b = l:r.bookmark
+          let l:counts.renamed += 1
+          let l:refetch = 0
+        endif
       endif
     endif
-    if (l:e.favorite ? 1 : 0) != (l:before.is_favorite ? 1 : 0)
+    let l:fav = l:e.favorite ? 1 : 0
+    if l:fav != (l:was.favorite ? 1 : 0) && l:fav != (l:b.is_favorite ? 1 : 0)
       let l:b = webmarks#domain#bookmark#toggle_favorite(l:b).bookmark
       let l:counts.favorite_changed += 1
     endif
-    if !s:same(l:before.folder_id, l:parent)
+    if !s:same(l:was.parent, l:parent) && !s:same(l:b.folder_id, l:parent)
       let l:b = webmarks#domain#bookmark#move_to(l:b, l:parent).bookmark
       let l:counts.moved += 1
     endif
@@ -329,7 +352,7 @@ function! s:transform(entries, delete_ids, now, data) abort
   if empty(l:errors)
     let l:v = webmarks#domain#folder#validate_all(l:work.folders, l:work.bookmarks)
     if !l:v.ok
-      call s:error(l:errors, s:lnum_in(l:v.error, l:entry_of), 'depth_exceeded', l:v.error)
+      call s:error(l:errors, s:lnum_in(l:v.error, l:entry_of), l:v.code, l:v.error)
     endif
     " the find_duplicate rule (exact match), indexed by URL
     let l:owner = {}
