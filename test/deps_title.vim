@@ -11,6 +11,10 @@ function! s:suite.after_each() abort
   call delete(s:dir, 'rf')
 endfunction
 
+function! s:has_result() abort
+  return !empty(s:results)
+endfunction
+
 function! s:cb(result, ctx) abort
   call add(s:results, [a:result, a:ctx])
 endfunction
@@ -28,20 +32,20 @@ function! s:suite.argv_shape() abort
 endfunction
 
 function! s:suite.stub_called_once_and_sanitized() abort
-  let g:webmarks_test.title_fetcher = {url, ctx -> {'ok': v:true, 'title': "  A\tB  "}}
+  let g:webmarks_test.title_fetcher = function('WebmarksTestTitle', ["  A\tB  "])
   call s:assert.true(webmarks#deps#title#available())
   call webmarks#deps#title#fetch('https://a.example', function('s:cb'), {'id': 'b1'})
   call s:assert.equals(s:results, [[{'ok': v:true, 'code': '', 'error': '', 'title': 'A B'}, {'id': 'b1'}]])
 endfunction
 
 function! s:suite.non_utf8_title_is_fetch_failed() abort
-  let g:webmarks_test.title_fetcher = {url, ctx -> {'ok': v:true, 'title': "\x83\x65\x83\x58\x83\x67"}}
+  let g:webmarks_test.title_fetcher = function('WebmarksTestTitle', ["\x83\x65\x83\x58\x83\x67"])
   call webmarks#deps#title#fetch('https://a.example', function('s:cb'), {})
   call s:assert.equals(s:results[0][0].code, 'fetch_failed')
 endfunction
 
 function! s:suite.empty_title_is_fetch_failed() abort
-  let g:webmarks_test.title_fetcher = {url, ctx -> {'ok': v:true, 'title': " ​ "}}
+  let g:webmarks_test.title_fetcher = function('WebmarksTestTitle', [" ​ "])
   call webmarks#deps#title#fetch('https://a.example', function('s:cb'), {})
   call s:assert.equals(s:results[0][0].code, 'fetch_failed')
 endfunction
@@ -57,7 +61,7 @@ function! s:suite.real_job_with_a_fake_curl() abort
   let $PATH = l:bin . ':' . $PATH
   try
     call webmarks#deps#title#fetch('https://a.example/x', function('s:cb'), {'id': 'b1'})
-    call s:assert.true(WebmarksTestWaitUntil({-> !empty(s:results)}, 5000))
+    call s:assert.true(WebmarksTestWaitUntil(function('s:has_result'), 5000))
   finally
     let $PATH = l:path
   endtry
@@ -74,7 +78,7 @@ function! s:suite.real_job_failure() abort
   let $PATH = l:bin . ':' . $PATH
   try
     call webmarks#deps#title#fetch('https://a.example/x', function('s:cb'), {})
-    call s:assert.true(WebmarksTestWaitUntil({-> !empty(s:results)}, 5000))
+    call s:assert.true(WebmarksTestWaitUntil(function('s:has_result'), 5000))
   finally
     let $PATH = l:path
   endtry

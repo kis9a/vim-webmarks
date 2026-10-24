@@ -100,8 +100,12 @@ function! s:suite.renamed_while_fetching_is_kept() abort
   call s:assert.equals(s:get('b1').display_name, 'Typed')
 endfunction
 
+function! s:throwing(event) abort
+  throw 'listener failed'
+endfunction
+
 function! s:suite.listener_errors_are_contained() abort
-  call webmarks#app#title#add_listener({e -> execute('throw "x"')})
+  call webmarks#app#title#add_listener(function('s:throwing'))
   let g:webmarks_test.title_fetcher = function('s:immediate')
   call webmarks#app#title#request('b1', 'https://a.example', 0, 1)
   call s:assert.equals(len(s:events), 1)

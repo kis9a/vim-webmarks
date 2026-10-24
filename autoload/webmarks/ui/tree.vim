@@ -23,25 +23,37 @@ let s:actions = [
 
 " --- options -------------------------------------------------------------
 
+" name -> [allowed type(s), allowed values or [] for any, default]
 let s:option_rules = {
-      \ 'open': [{v -> type(v) == v:t_string && index(['vsplit', 'split', 'edit', 'tab'], v) >= 0}, 'vsplit'],
-      \ 'width': [{v -> type(v) == v:t_number && v > 0}, 40],
-      \ 'default_sort': [{v -> type(v) == v:t_string && index(['name', 'recent', 'frecency'], v) >= 0}, 'frecency'],
-      \ 'favorite_first': [{v -> index([v:t_number, v:t_bool], type(v)) >= 0}, 1],
-      \ 'default_view': [{v -> type(v) == v:t_string && index(['tree', 'flat'], v) >= 0}, 'tree'],
-      \ 'fetch_title': [{v -> index([v:t_number, v:t_bool], type(v)) >= 0}, 1],
-      \ 'no_default_mappings': [{v -> index([v:t_number, v:t_bool], type(v)) >= 0}, 0],
+      \ 'open': [[v:t_string], ['vsplit', 'split', 'edit', 'tab'], 'vsplit'],
+      \ 'width': [[v:t_number], [], 40],
+      \ 'default_sort': [[v:t_string], ['name', 'recent', 'frecency'], 'frecency'],
+      \ 'favorite_first': [[v:t_number, v:t_bool], [], 1],
+      \ 'default_view': [[v:t_string], ['tree', 'flat'], 'tree'],
+      \ 'fetch_title': [[v:t_number, v:t_bool], [], 1],
+      \ 'no_default_mappings': [[v:t_number, v:t_bool], [], 0],
       \ }
+
+function! s:valid_option(name, value) abort
+  let [l:types, l:values, l:_] = s:option_rules[a:name]
+  if index(l:types, type(a:value)) < 0
+    return 0
+  endif
+  if !empty(l:values)
+    return index(l:values, a:value) >= 0
+  endif
+  return a:name !=# 'width' || a:value > 0
+endfunction
 
 " option(name) -> the validated value of g:webmarks_{name}. A bad value
 " falls back to the built-in default with a one-time warning.
 function! webmarks#ui#tree#option(name) abort
-  let [l:Valid, l:default] = s:option_rules[a:name]
+  let l:default = s:option_rules[a:name][2]
   if !exists('g:webmarks_' . a:name)
     return l:default
   endif
   let l:v = get(g:, 'webmarks_' . a:name)
-  if l:Valid(l:v)
+  if s:valid_option(a:name, l:v)
     return l:v
   endif
   call webmarks#compat#notify#warn_once('bad_option:' . a:name . ':' . string(l:v),
@@ -130,7 +142,7 @@ function! webmarks#ui#tree#define_highlights() abort
 endfunction
 
 function! s:define_plug_maps() abort
-  for [l:action, l:key] in s:actions
+  for [l:action, l:_] in s:actions
     if l:action ==# 'search'
       " the fzf picker belongs to the command layer, not to ui/tree
       nnoremap <buffer> <silent> <Plug>(webmarks-search) :<C-u>WebmarksSearch<CR>
@@ -335,7 +347,8 @@ function! s:busy() abort
   return 0
 endfunction
 
-function! s:changed(tries) abort
+" (a timer passes its id as an extra argument)
+function! s:changed(tries, ...) abort
   let l:buf = webmarks#ui#tree#bufnr()
   if l:buf < 0 || empty(s:windows(l:buf)) || empty(getbufvar(l:buf, 'webmarks'))
     return
@@ -349,7 +362,7 @@ function! s:changed(tries) abort
   " the command line (an input() prompt): wait as long as it takes;
   " Insert/Visual/pending operator: give up waiting after ~3 s
   if l:busy == 2 || (l:busy == 1 && a:tries < 60)
-    call timer_start(a:tries == 0 ? 0 : 50, {-> s:changed(a:tries + 1)})
+    call timer_start(a:tries == 0 ? 0 : 50, function('s:changed', [a:tries + 1]))
     return
   endif
   call s:render_all(l:buf)
@@ -487,10 +500,10 @@ endfunction
 function! webmarks#ui#tree#on_buf_leave() abort
   let l:winid = win_getid()
   let l:buf = str2nr(expand('<abuf>'))
-  call timer_start(0, {-> s:check_left(l:winid, l:buf)})
+  call timer_start(0, function('s:check_left', [l:winid, l:buf]))
 endfunction
 
-function! s:check_left(winid, buf) abort
+function! s:check_left(winid, buf, ...) abort
   if win_id2win(a:winid) > 0 && winbufnr(a:winid) != a:buf
     call win_execute(a:winid, 'call s:forget_window()')
   endif
@@ -818,7 +831,7 @@ endfunction
 
 function! s:do_help() abort
   let l:lines = []
-  for [l:action, l:key] in s:actions
+  for [l:action, l:_] in s:actions
     let l:keys = []
     for l:k in b:webmarks.mapped_keys
       if maparg(l:k, 'n') ==# '<Plug>(webmarks-' . l:action . ')'

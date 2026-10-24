@@ -11,7 +11,7 @@ function! s:suite.before_each() abort
   let s:texts = []
   let s:asked = []
   let g:webmarks_test.prompt = {'text': function('s:text')}
-  let g:webmarks_test.title_fetcher = {url, ctx -> {'ok': v:true, 'title': 'Title of ' . url}}
+  let g:webmarks_test.title_fetcher = function('s:title_of')
 endfunction
 
 function! s:suite.after_each() abort
@@ -21,6 +21,10 @@ function! s:suite.after_each() abort
     execute 'silent! bwipeout!' l:buf
   endif
   call delete(s:dir, 'rf')
+endfunction
+
+function! s:title_of(url, ctx) abort
+  return {'ok': v:true, 'title': 'Title of ' . a:url}
 endfunction
 
 function! s:text(prompt, default) abort
@@ -113,7 +117,6 @@ function! s:suite.plugin_does_not_load_autoload() abort
   let l:cmd = has('nvim')
         \ ? ['nvim', '--headless', '-u', 'NONE', '-i', 'NONE', '-n']
         \ : ['vim', '-Nu', 'NONE', '-i', 'NONE', '-n', '-e', '-s']
-  let l:root = fnamemodify(expand('<sfile>'), ':p:h:h')
   let l:out = tempname()
   let l:script = ['set rtp^=' . fnameescape(getcwd()), 'runtime plugin/webmarks.vim',
         \ 'call writefile([string(exists("*webmarks#open")), execute("scriptnames")], ' . string(l:out) . ')',

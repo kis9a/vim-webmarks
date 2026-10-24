@@ -61,11 +61,14 @@ test-nvim: tester ## testing with vim-themis (Neovim)
 
 test: test-vim test-nvim ## testing with vim-themis (Vim and Neovim)
 
+# EVL103 (unused argument) is off: job, channel and timer callbacks have
+# signatures fixed by Vim / Neovim. The pinned vimlint cannot parse lambdas,
+# so the sources use named functions and partials instead.
 lint: linter ## linting with vimlint
 	$(VIMLINT_DIR)/bin/vimlint.sh \
 		-l $(VIMLINT_DIR) \
 		-p $(VIMLPARSER_DIR) \
-		-e EVL102.l:_=1 \
+		-e EVL102.l:_=1 -e EVL103=1 \
 		$(LINT_DIRS) 2>&1
 
 lint-vint: check-vint ## linting with vint

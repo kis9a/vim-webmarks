@@ -78,8 +78,8 @@ function! s:suite.validate_all_h1_to_h5() abort
   let l:deep = s:folders() + [{'id': 'f6', 'name': 'x', 'parent_id': 'f2'}]
   call s:assert.equals(webmarks#domain#folder#validate_all(l:deep, []).code, 'invalid_data')
   " H2
-  let l:selfp = [{'id': 'f1', 'name': 'x', 'parent_id': 'f1'}]
-  call s:assert.equals(webmarks#domain#folder#validate_all(l:selfp, []).code, 'invalid_data')
+  let l:own = [{'id': 'f1', 'name': 'x', 'parent_id': 'f1'}]
+  call s:assert.equals(webmarks#domain#folder#validate_all(l:own, []).code, 'invalid_data')
   " H3
   let l:cyc = [{'id': 'f1', 'name': 'a', 'parent_id': 'f2'}, {'id': 'f2', 'name': 'b', 'parent_id': 'f1'}]
   let l:r = webmarks#domain#folder#validate_all(l:cyc, [])

@@ -31,11 +31,15 @@ function! s:sample() abort
         \ ]}
 endfunction
 
+function! s:by_id(a, b) abort
+  return str2nr(a:a.id[1:]) - str2nr(a:b.id[1:])
+endfunction
+
 function! s:normalized(data) abort
   let l:d = deepcopy(a:data)
   call map(l:d.bookmarks, 'webmarks#domain#bookmark#validate(v:val).value')
-  call sort(l:d.bookmarks, {a, b -> str2nr(a.id[1:]) - str2nr(b.id[1:])})
-  call sort(l:d.folders, {a, b -> str2nr(a.id[1:]) - str2nr(b.id[1:])})
+  call sort(l:d.bookmarks, function('s:by_id'))
+  call sort(l:d.folders, function('s:by_id'))
   return l:d
 endfunction
 

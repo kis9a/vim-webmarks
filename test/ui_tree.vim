@@ -18,8 +18,8 @@ function! s:suite.before_each() abort
   let g:webmarks_test.cmd_runner = function('s:runner')
   let g:webmarks_test.prompt = {
         \ 'text': function('s:text'),
-        \ 'choose_folder': {data, exclude -> s:folder_answer},
-        \ 'confirm': {msg -> s:confirm},
+        \ 'choose_folder': function('s:choose_folder'),
+        \ 'confirm': function('s:confirm'),
         \ }
   messages clear
 endfunction
@@ -33,6 +33,14 @@ function! s:suite.after_each() abort
     execute 'silent! bwipeout!' l:buf
   endif
   call delete(s:dir, 'rf')
+endfunction
+
+function! s:choose_folder(data, exclude) abort
+  return s:folder_answer
+endfunction
+
+function! s:confirm(msg) abort
+  return s:confirm
 endfunction
 
 function! s:runner(argv, opts) abort
@@ -214,7 +222,7 @@ function! s:suite.empty_tree_enter_adds() abort
   Webmarks
   call s:assert.equals(getline(1, '$'), ['[no bookmarks — press a to add]'])
   call s:assert.equals(map(getmatches(), 'v:val.group'), ['WebmarksEmpty'])
-  let g:webmarks_test.title_fetcher = {url, ctx -> {'ok': v:true, 'title': 'Fetched'}}
+  let g:webmarks_test.title_fetcher = function('WebmarksTestTitle', ['Fetched'])
   let s:texts = ['https://new.example', '']
   call s:press("\<CR>")
   call s:assert.equals(getline(1, '$'), ['  Fetched'])
@@ -318,7 +326,7 @@ endfunction
 
 function! s:suite.refetch_overwrites_manual_name() abort
   call s:seed()
-  let g:webmarks_test.title_fetcher = {url, ctx -> {'ok': v:true, 'title': 'From page'}}
+  let g:webmarks_test.title_fetcher = function('WebmarksTestTitle', ['From page'])
   call webmarks#open()
   call cursor(s:lnum('b1'), 1)
   call s:press('t')

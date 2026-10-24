@@ -10,7 +10,7 @@ function! s:suite.before_each() abort
   let s:opened = []
   let s:done = []
   let g:webmarks_browser_cmd = ['fake-browser']
-  let g:webmarks_test.cmd_runner = {argv, opts -> add(s:opened, argv[-1]) is v:null ? {} : {'exit_code': 0}}
+  let g:webmarks_test.cmd_runner = function('s:runner')
   call webmarks#app#bookmark#add('https://a.example', 'Alpha', v:null, 1)
   call webmarks#app#bookmark#add('https://b.example', 'Beta', v:null, 1)
   call webmarks#app#bookmark#toggle_favorite('b2')
@@ -26,6 +26,11 @@ function! s:suite.after_each() abort
   silent! delfunction fzf#wrap
   unlet! g:WebmarksTestFzfSpec
   call delete(s:dir, 'rf')
+endfunction
+
+function! s:runner(argv, opts) abort
+  call add(s:opened, a:argv[-1])
+  return {'exit_code': 0}
 endfunction
 
 function! s:on_done(r) abort

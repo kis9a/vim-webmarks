@@ -29,3 +29,13 @@ function! WebmarksTestReset() abort
   let g:webmarks_test = {'now': 1700000000}
   return l:dir
 endfunction
+
+" title_fetcher stub: function('WebmarksTestTitle', ['Some title'])
+function! WebmarksTestTitle(title, url, ctx) abort
+  return {'ok': v:true, 'title': a:title}
+endfunction
+
+" A constant Funcref result: function('WebmarksTestConst', [value])
+function! WebmarksTestConst(value, ...) abort
+  return a:value
+endfunction

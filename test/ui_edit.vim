@@ -21,7 +21,7 @@ function! s:suite.before_each() abort
   let s:confirm = 1
   let s:asked = []
   let g:webmarks_test.prompt = {'confirm': function('s:confirm')}
-  let g:webmarks_test.title_fetcher = {url, ctx -> {'ok': v:true, 'title': 'Fetched'}}
+  let g:webmarks_test.title_fetcher = function('WebmarksTestTitle', ['Fetched'])
   call webmarks#app#bookmark#add('https://a.example', 'Alpha', v:null, 1)
   call webmarks#app#folder#add('Dev', v:null)
   call webmarks#app#bookmark#add('https://g.example', 'Guide', 'f2', 1)
@@ -43,6 +43,11 @@ endfunction
 function! s:confirm(msg) abort
   call add(s:asked, a:msg)
   return s:confirm
+endfunction
+
+" Match groups of a window (getmatches({win}) is unknown to the pinned vimlint)
+function! s:groups(winid) abort
+  return map(call('getmatches', [a:winid]), 'v:val.group')
 endfunction
 
 " Window option of any window, also in another tab page
@@ -70,7 +75,7 @@ function! s:suite.enter_switches_buffer_and_window_settings() abort
   for l:winid in win_findbuf(bufnr('%'))
     call s:assert.equals(getwinvar(l:winid, '&foldmethod'), 'manual')
     call s:assert.equals(getwinvar(l:winid, '&conceallevel'), 2)
-    call s:assert.equals(map(getmatches(l:winid), 'v:val.group'), ['Conceal'])
+    call s:assert.equals(s:groups(l:winid), ['Conceal'])
   endfor
 endfunction
 
@@ -186,7 +191,7 @@ function! s:suite.other_tab_window_gets_edit_settings() abort
   write
   call s:assert.equals(s:wopt(l:other, 'conceallevel'), 0)
   call s:assert.equals(s:wopt(l:other, 'foldmethod'), 'expr')
-  call s:assert.equals(map(getmatches(l:other), 'v:val.group'), ['WebmarksFolder'])
+  call s:assert.equals(s:groups(l:other), ['WebmarksFolder'])
 endfunction
 
 function! s:suite.foldlevel_is_restored() abort
