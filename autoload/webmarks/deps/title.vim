@@ -79,83 +79,12 @@ function! s:on_exit(Callback, ctx, result) abort
     call call(a:Callback, [s:failed(), a:ctx])
     return
   endif
-  let l:title = webmarks#deps#title#extract(a:result.stdout)
+  let l:title = webmarks#domain#html#extract_title(a:result.stdout)
   if l:title is v:null
     call call(a:Callback, [s:failed(), a:ctx])
     return
   endif
   call s:finish({'ok': v:true, 'title': l:title}, a:Callback, a:ctx)
-endfunction
-
-" extract(html) -> String or v:null. Uses mdlink's pure extractor when it
-" can be loaded (a lazily loaded mdlink is E117 until its command runs),
-" else the built-in copy of the same rules.
-function! webmarks#deps#title#extract(html) abort
-  if get(s:, 'use_mdlink', 1)
-    try
-      return mdlink#core#extractTitleFromHtml(a:html)
-    catch /E117/
-    catch /.*/
-    endtry
-  endif
-  return webmarks#deps#title#builtin_extract(a:html)
-endfunction
-
-" Test helper: 0 forces the built-in extractor.
-function! webmarks#deps#title#_use_mdlink(flag) abort
-  let s:use_mdlink = a:flag
-endfunction
-
-" Same rules as mdlink: prefer <head>, the last non-empty <title>, strip
-" tags, decode entities, squeeze whitespace, trim. No charset handling.
-function! webmarks#deps#title#builtin_extract(html) abort
-  if type(a:html) != v:t_string || a:html ==# ''
-    return v:null
-  endif
-  let l:target = a:html
-  let l:head = matchstr(a:html, '\c<head\%(\s\+[^>]*\)\?>\_.\{-}</head>')
-  if l:head !=# ''
-    let l:target = l:head
-  endif
-  let l:pattern = '\c<title\%(\s\+[^>]*\)\?>\s*\(\_.\{-}\)\s*</title>'
-  let l:last = v:null
-  let l:pos = 0
-  while 1
-    let [l:str, l:start, l:end] = matchstrpos(l:target, l:pattern, l:pos)
-    if l:start < 0
-      break
-    endif
-    let l:content = matchstr(l:str, '\c<title\%(\s\+[^>]*\)\?>\s*\zs\_.\{-}\ze\s*</title>')
-    let l:content = substitute(l:content, '<[^>]*>', '', 'g')
-    let l:content = s:decode_entities(l:content)
-    let l:content = trim(substitute(l:content, '\_s\+', ' ', 'g'))
-    if l:content !=# ''
-      let l:last = l:content
-    endif
-    let l:pos = l:end
-  endwhile
-  return l:last
-endfunction
-
-function! s:char(nr) abort
-  " never produce NUL or a surrogate / out-of-range code point
-  if a:nr <= 0 || a:nr > 0x10FFFF || (a:nr >= 0xD800 && a:nr <= 0xDFFF)
-    return ''
-  endif
-  return nr2char(a:nr, 1)
-endfunction
-
-function! s:decode_entities(text) abort
-  let l:r = substitute(a:text, '&#\(\d\{1,7}\);', '\=s:char(str2nr(submatch(1)))', 'g')
-  let l:r = substitute(l:r, '\c&#x\(\x\{1,6}\);', '\=s:char(str2nr(submatch(1), 16))', 'g')
-  let l:r = substitute(l:r, '&lt;', '<', 'g')
-  let l:r = substitute(l:r, '&gt;', '>', 'g')
-  let l:r = substitute(l:r, '&quot;', '"', 'g')
-  let l:r = substitute(l:r, '&#39;\|&apos;', "'", 'g')
-  let l:r = substitute(l:r, '&nbsp;', ' ', 'g')
-  " last, so "&amp;lt;" stays "&lt;"
-  let l:r = substitute(l:r, '&amp;', '\&', 'g')
-  return l:r
 endfunction
 
 let &cpoptions = s:save_cpo

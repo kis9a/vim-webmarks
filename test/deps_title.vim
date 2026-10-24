@@ -5,11 +5,9 @@ let s:assert = themis#helper('assert')
 function! s:suite.before_each() abort
   let s:dir = WebmarksTestReset()
   let s:results = []
-  call webmarks#deps#title#_use_mdlink(1)
 endfunction
 
 function! s:suite.after_each() abort
-  call webmarks#deps#title#_use_mdlink(1)
   call delete(s:dir, 'rf')
 endfunction
 
@@ -46,40 +44,6 @@ function! s:suite.empty_title_is_fetch_failed() abort
   let g:webmarks_test.title_fetcher = {url, ctx -> {'ok': v:true, 'title': " ​ "}}
   call webmarks#deps#title#fetch('https://a.example', function('s:cb'), {})
   call s:assert.equals(s:results[0][0].code, 'fetch_failed')
-endfunction
-
-function! s:suite.builtin_extract() abort
-  call webmarks#deps#title#_use_mdlink(0)
-  let l:E = function('webmarks#deps#title#extract')
-  call s:assert.equals(l:E('<html><head><title> Hello &amp; &lt;World&gt; </title></head></html>'), 'Hello & <World>')
-  call s:assert.equals(l:E("<head><TITLE lang=en>\n  multi\n  line </TITLE></head>"), 'multi line')
-  call s:assert.equals(l:E('<head><title>&#26085;&#x672C; &amp;lt;</title></head>'), '日本 &lt;')
-  call s:assert.equals(l:E('<head><title>Real</title></head><body><svg><title>Icon</title></svg></body>'), 'Real')
-  call s:assert.equals(l:E('<body><title>a</title><title> </title><title>b</title></body>'), 'b')
-  call s:assert.equals(l:E('<head><title><b>bold</b> x</title></head>'), 'bold x')
-  call s:assert.equals(l:E('<head><title>&#0;&#xD800;ok</title></head>'), 'ok')
-  call s:assert.equals(l:E('no title'), v:null)
-  call s:assert.equals(l:E(''), v:null)
-endfunction
-
-function! s:suite.mdlink_missing_falls_back() abort
-  " mdlink is not on 'runtimepath' in the test: E117 -> built-in
-  call s:assert.equals(webmarks#deps#title#extract('<title>x</title>'), 'x')
-endfunction
-
-function! s:suite.mdlink_used_when_loadable() abort
-  let l:mdlink = expand('~/.vim/plugged/mdlink')
-  if !isdirectory(l:mdlink)
-    call themis#log('mdlink not installed; skipped')
-    return
-  endif
-  execute 'set runtimepath+=' . fnameescape(l:mdlink)
-  try
-    call s:assert.equals(webmarks#deps#title#extract('<head><title> M </title></head>'), 'M')
-    call s:assert.true(exists('*mdlink#core#extractTitleFromHtml'))
-  finally
-    execute 'set runtimepath-=' . fnameescape(l:mdlink)
-  endtry
 endfunction
 
 function! s:suite.real_job_with_a_fake_curl() abort
