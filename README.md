@@ -60,9 +60,12 @@ Optional:
 | `d` | delete | `R` | reload the file |
 | `*` | toggle favorite | `i` | edit mode |
 | `t` | fetch title again | `q` | close |
-| `y` | yank URL | `g?` | list keys |
+| `y` | yank URL | `?` | list the keys of this buffer |
 
 Every key is a `<Plug>(webmarks-…)` mapping; see `:help webmarks-mappings`.
+A default key that clashes with one of your mappings (say `s` with your
+`ss` / `sv`) is mapped as `<Leader>s` instead; `?` shows the keys you got
+(`:help webmarks-leader`). The buffer is `webmarks://webmarks`.
 
 ### Edit mode
 

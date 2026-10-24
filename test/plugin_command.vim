@@ -107,7 +107,7 @@ endfunction
 
 function! s:suite.toggle() abort
   WebmarksToggle
-  call s:assert.equals(bufname('%'), 'webmarks://tree')
+  call s:assert.equals(bufname('%'), 'webmarks://webmarks')
   WebmarksToggle
   call s:assert.equals(winnr('$'), 1)
 endfunction

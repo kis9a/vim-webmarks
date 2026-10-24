@@ -52,8 +52,9 @@ Requirements:
 	:WebmarksAdd https://neovim.io/doc/  Neovim docs
 	:Webmarks
 <
-In the tree: <CR> opens, `a` adds, `A` adds a folder, `m` moves, `g?`
-lists all keys, `q` closes.
+In the tree: <CR> opens, `a` adds, `A` adds a folder, `m` moves, `?`
+lists the keys of this buffer, `q` closes. A key that clashes with one of
+your mappings gets <Leader> in front (|webmarks-leader|); `?` shows which.
 
 Suggested mappings (point them at the commands, so they also work while
 the plugin is lazily loaded): >
@@ -96,7 +97,8 @@ the plugin is lazily loaded): >
 ==============================================================================
 4. The tree buffer					*webmarks-tree*
 
-The buffer `webmarks://tree` (filetype `webmarks`) shows bookmarks of the
+The buffer `webmarks://webmarks` (filetype `webmarks`; tab labels and the
+status line show `webmarks`) shows bookmarks of the
 root first, then each folder (by name) with its sub-folders and its
 bookmarks: >
 	★ Vim help
@@ -112,6 +114,7 @@ Folders are Vim folds: `za`, `zc`, `zM`, `zR` and friends work as usual.
 In the flat view (`T`) all bookmarks are listed with their folder path.
 
 						*webmarks-keys*
+The default keys (each may become <Leader>{key}, see |webmarks-leader|):
 Key	Action ~
 <CR>	open the bookmark in the browser; on a folder toggle its fold;
 	on the empty line add a bookmark
@@ -133,7 +136,8 @@ s	|:WebmarksSearch|
 R	read the data file again
 i	|webmarks-edit|
 q	close the window (in edit mode: leave edit mode)
-g?	list the keys
+?	list the keys this buffer has now, with what they do (also in
+	edit mode)
 
 						*webmarks-mappings*
 Every action is a <Plug> mapping: `<Plug>(webmarks-open)`,
@@ -156,11 +160,24 @@ the buffer. Map your own keys from a FileType autocommand: >
 <
 Set |g:webmarks_no_default_mappings| to map nothing yourself.
 
+						*webmarks-leader*
+A default key that clashes with a mapping that already exists when the
+tree buffer is set up is mapped as <Leader>{key} instead. A clash means a
+mapping with the same key, a longer one that starts with it, or a shorter
+one it starts with: with `nnoremap ss :sp<CR>` in your vimrc, `s` (search)
+becomes <Leader>s, so `ss` keeps working in the tree; vim-surround's `ds`
+and `ys` turn `d` and `y` into <Leader>d and <Leader>y. Plain keys are
+mapped with |:map-<nowait>|; <Leader> keys are not, so your own
+<Leader>{key}x mappings still work after 'timeoutlen'. The result depends
+on your mappings; press `?` to see it. To pick keys yourself, map the
+<Plug> mappings (above): an action you mapped gets no default key.
+
 						*webmarks-overridden-keys*
 The tree is a read-only list, so some keys lose their usual meaning
 there: `e` (word motion), `m` (set mark), `*` (search word), `t` (till),
-`S`, `F`, `T`, `P`, `s`, `R`, `a`, `A`, `r`, `d`, `y`, `i`, `q` (record).
-`?`, `/`, `n` and the fold commands are left alone.
+`S`, `F`, `T`, `P`, `s`, `R`, `a`, `A`, `r`, `d`, `y`, `i`, `q` (record),
+`?` (search backward; use `/` and `N`). `/`, `n` and the fold commands are
+left alone.
 
 Deleting a folder is refused while it holds bookmarks or folders. The
 folder depth is limited to two levels.
@@ -203,6 +220,7 @@ tabs ('expandtab' and 'shiftwidth' 2 are set, so |>>| and |<<| work).
 	view mode.
 |:e!|	discard the edits, read the file again and go back to the view mode.
 q	leave edit mode if nothing was changed; otherwise warn.
+?	list the keys of edit mode.
 
 Mappings: the default keys are removed while editing (except `q`) and
 come back afterwards. Your own FileType mappings stay; check

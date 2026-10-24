@@ -9,17 +9,35 @@ scriptencoding utf-8
 let s:save_cpo = &cpoptions
 set cpoptions&vim
 
-let s:name = 'webmarks://tree'
+" the tail is what tab labels and the status line show
+let s:name = 'webmarks://webmarks'
 let s:edit_msg = 'unsaved edits: :w to apply, :e! to discard'
 
-" action -> default key, in help order
+" [action, default key, description], in help order
 let s:actions = [
-      \ ['open', '<CR>'], ['add', 'a'], ['add-folder', 'A'], ['rename', 'r'],
-      \ ['edit-url', 'e'], ['move', 'm'], ['delete', 'd'], ['favorite', '*'],
-      \ ['refetch', 't'], ['yank', 'y'], ['sort-recent', 'S'], ['sort-name', '~'],
-      \ ['sort-frecency', 'F'], ['toggle-favorite-first', 'P'], ['toggle-view', 'T'],
-      \ ['search', 's'], ['reload', 'R'], ['edit', 'i'], ['close', 'q'], ['help', 'g?'],
+      \ ['open', '<CR>', 'open the bookmark / toggle the folder'],
+      \ ['add', 'a', 'add a bookmark'],
+      \ ['add-folder', 'A', 'add a folder'],
+      \ ['rename', 'r', 'rename'],
+      \ ['edit-url', 'e', 'change the URL'],
+      \ ['move', 'm', 'move to another folder'],
+      \ ['delete', 'd', 'delete'],
+      \ ['favorite', '*', 'toggle favorite'],
+      \ ['refetch', 't', 'fetch the title again'],
+      \ ['yank', 'y', 'yank the URL'],
+      \ ['sort-recent', 'S', 'sort by most recently opened'],
+      \ ['sort-name', '~', 'sort by name'],
+      \ ['sort-frecency', 'F', 'sort by frecency'],
+      \ ['toggle-favorite-first', 'P', 'toggle favorites first'],
+      \ ['toggle-view', 'T', 'toggle tree / flat view'],
+      \ ['search', 's', 'search with fzf'],
+      \ ['reload', 'R', 'read the file again'],
+      \ ['edit', 'i', 'edit as text'],
+      \ ['close', 'q', 'close (in edit mode: leave it)'],
+      \ ['help', '?', 'show this list'],
       \ ]
+" kept mapped in edit mode
+let s:edit_actions = ['close', 'help']
 
 " --- options -------------------------------------------------------------
 
@@ -112,8 +130,8 @@ function! s:init_buffer() abort
   let b:webmarks = {
         \ 'policy': webmarks#ui#tree#default_policy(),
         \ 'view': webmarks#ui#tree#option('default_view'),
-        \ 'rows': [], 'mode': 'view', 'mapped_keys': [],
-        \ 'edit': {'snapshot_ids': [], 'mapped_keys': [], 'dirty': 0},
+        \ 'rows': [], 'mode': 'view', 'mappings': [],
+        \ 'edit': {'snapshot_ids': [], 'mappings': [], 'dirty': 0},
         \ }
   call s:define_plug_maps()
   call s:map_default_keys()
@@ -142,7 +160,7 @@ function! webmarks#ui#tree#define_highlights() abort
 endfunction
 
 function! s:define_plug_maps() abort
-  for [l:action, l:_] in s:actions
+  for [l:action, l:_, l:_] in s:actions
     if l:action ==# 'search'
       " the fzf picker belongs to the command layer, not to ui/tree
       nnoremap <buffer> <silent> <Plug>(webmarks-search) :<C-u>WebmarksSearch<CR>
@@ -153,29 +171,36 @@ function! s:define_plug_maps() abort
   endfor
 endfunction
 
-" Map the default keys that the user has not mapped to the action.
-" Returns the keys that were mapped.
-function! s:action_of(key) abort
-  for [l:action, l:key] in s:actions
-    if l:key ==# a:key
-      return l:action
-    endif
-  endfor
-  return ''
-endfunction
-
+" Map the default keys (b:webmarks.mappings = [[lhs, action, nowait], ...]).
+" - an action the user mapped to a key of their own: nothing
+" - a key that clashes with an existing mapping (the same key, a longer
+"   one starting with it, or a shorter one it starts with; e.g. the user's
+"   `ss` / `sv` for `s`, vim-surround's `ds` for `d`): <Leader>{key},
+"   without <nowait> so the user's <Leader>{key}x still works after
+"   'timeoutlen'
+" - otherwise {key} with <nowait>
 function! s:map_default_keys() abort
-  let b:webmarks.mapped_keys = []
+  let b:webmarks.mappings = []
   if webmarks#ui#tree#option('no_default_mappings')
     return
   endif
-  for [l:action, l:key] in s:actions
+  let l:plan = []
+  for [l:action, l:key, l:_] in s:actions
     let l:plug = '<Plug>(webmarks-' . l:action . ')'
-    if !hasmapto(l:plug, 'n')
-      execute 'nmap <buffer> <nowait>' l:key l:plug
-      call add(b:webmarks.mapped_keys, l:key)
+    if hasmapto(l:plug, 'n')
+      continue
     endif
+    " decide every key before mapping any: our own maps must not count
+    call add(l:plan, mapcheck(l:key, 'n') ==# '' ? [l:key, l:action, 1] : ['<Leader>' . l:key, l:action, 0])
   endfor
+  for l:m in l:plan
+    call s:map(l:m)
+    call add(b:webmarks.mappings, l:m)
+  endfor
+endfunction
+
+function! s:map(m) abort
+  execute 'nmap <buffer>' (a:m[2] ? '<nowait>' : '') a:m[0] '<Plug>(webmarks-' . a:m[1] . ')'
 endfunction
 
 " --- windows ---------------------------------------------------------------
@@ -621,7 +646,7 @@ function! webmarks#ui#tree#action(name) abort
   if !exists('b:webmarks')
     return
   endif
-  if b:webmarks.mode ==# 'edit' && a:name !=# 'close'
+  if b:webmarks.mode ==# 'edit' && index(s:edit_actions, a:name) < 0
     return
   endif
   call call('s:do_' . substitute(a:name, '-', '_', 'g'), [])
@@ -857,16 +882,31 @@ function! s:do_edit() abort
 endfunction
 
 function! s:do_help() abort
-  let l:lines = []
-  for [l:action, l:_] in s:actions
-    let l:keys = []
-    for l:k in b:webmarks.mapped_keys
-      if maparg(l:k, 'n') ==# '<Plug>(webmarks-' . l:action . ')'
-        call add(l:keys, l:k)
-      endif
-    endfor
-    call add(l:lines, printf('%-6s %s', empty(l:keys) ? '-' : join(l:keys, ' '), l:action))
+  let l:lhs = {}
+  for [l:key, l:action, l:_] in b:webmarks.mappings
+    let l:lhs[l:action] = l:key
   endfor
+  let l:editing = b:webmarks.mode ==# 'edit'
+  let l:lines = [l:editing ? 'webmarks mappings (edit mode):' : 'webmarks mappings:', '']
+  for [l:action, l:_, l:desc] in s:actions
+    if l:editing && index(s:edit_actions, l:action) < 0
+      continue
+    endif
+    let l:key = get(l:lhs, l:action, '')
+    if l:key ==# ''
+      " mapped by the user (or not at all): name the <Plug> mapping
+      let l:key = '<Plug>(webmarks-' . l:action . ')'
+    endif
+    call add(l:lines, printf('  %-14s %s', l:key, l:desc))
+  endfor
+  if l:editing
+    call extend(l:lines, ['  :w             apply the changes', '  :e!            discard the changes'])
+  endif
+  if !empty(filter(copy(b:webmarks.mappings), 'v:val[0] =~# "^<Leader>"'))
+    let l:leader = get(g:, 'mapleader', '\')
+    call extend(l:lines, ['', '  <Leader> is ' . (l:leader ==# ' ' ? '<Space>' : strtrans(l:leader))
+          \ . '; a key gets it when the plain key is already mapped'])
+  endif
   echo join(l:lines, "\n")
 endfunction
 
@@ -894,7 +934,7 @@ function! webmarks#ui#tree#enter_edit() abort
   let l:edit = webmarks#app#listing#edit_lines(webmarks#app#store#current(), b:webmarks.policy,
         \ webmarks#compat#clock#now())
   let b:webmarks.edit = {'snapshot_ids': l:edit.ids, 'shown': l:edit.shown,
-        \ 'mapped_keys': filter(copy(b:webmarks.mapped_keys), 'v:val !=# "q"'), 'dirty': 0}
+        \ 'mappings': filter(copy(b:webmarks.mappings), 'index(s:edit_actions, v:val[1]) < 0'), 'dirty': 0}
   let b:webmarks.mode = 'edit'
   " still undolevels=-1 here: the view text cannot be undone into
   setlocal modifiable
@@ -906,8 +946,8 @@ function! webmarks#ui#tree#enter_edit() abort
   for l:winid in s:windows(l:buf)
     call win_execute(l:winid, 'call webmarks#ui#tree#_edit_window_on()')
   endfor
-  for l:key in b:webmarks.edit.mapped_keys
-    execute 'silent! nunmap <buffer>' l:key
+  for l:m in b:webmarks.edit.mappings
+    execute 'silent! nunmap <buffer>' l:m[0]
   endfor
   " setline() sets 'modified' even for identical text
   setlocal nomodified
@@ -942,12 +982,9 @@ function! webmarks#ui#tree#leave_edit() abort
     call win_execute(l:winid, 'call s:edit_window_off()')
   endfor
   setlocal undolevels=-1 nomodifiable expandtab< shiftwidth< softtabstop<
-  " map back exactly the keys enter_edit() removed (q stayed mapped)
-  for l:key in b:webmarks.edit.mapped_keys
-    let l:action = s:action_of(l:key)
-    if l:action !=# '' && !hasmapto('<Plug>(webmarks-' . l:action . ')', 'n')
-      execute 'nmap <buffer> <nowait>' l:key '<Plug>(webmarks-' . l:action . ')'
-    endif
+  " map back exactly what enter_edit() removed, with the same keys
+  for l:m in b:webmarks.edit.mappings
+    call s:map(l:m)
   endfor
   let b:webmarks.edit.dirty = 0
   call webmarks#ui#tree#render()

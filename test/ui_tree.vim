@@ -87,7 +87,7 @@ function! s:suite.open_vsplit_and_close() abort
   Webmarks
   call s:assert.equals(winnr('$'), 2)
   call s:assert.equals(winwidth(0), 40)
-  call s:assert.equals(bufname('%'), 'webmarks://tree')
+  call s:assert.equals(bufname('%'), 'webmarks://webmarks')
   call s:assert.equals([&buftype, &bufhidden, &swapfile, &buflisted, &modifiable, &filetype],
         \ ['acwrite', 'hide', 0, 0, 0, 'webmarks'])
   call s:assert.equals(map(copy(b:webmarks.rows), 'v:val.text'), getline(1, '$'))
@@ -95,10 +95,10 @@ function! s:suite.open_vsplit_and_close() abort
   wincmd p
   Webmarks
   call s:assert.equals(winnr('$'), 2)
-  call s:assert.equals(bufname('%'), 'webmarks://tree')
+  call s:assert.equals(bufname('%'), 'webmarks://webmarks')
   call s:press('q')
   call s:assert.equals(winnr('$'), 1)
-  call s:assert.not_equals(bufname('%'), 'webmarks://tree')
+  call s:assert.not_equals(bufname('%'), 'webmarks://webmarks')
 endfunction
 
 function! s:suite.close_as_only_window_enews() abort
@@ -370,7 +370,7 @@ function! s:suite.split_window_gets_settings_and_matches() abort
   sleep 20m
   call s:assert.equals(getmatches(), [])
   wincmd w
-  call s:assert.equals(bufname('%'), 'webmarks://tree')
+  call s:assert.equals(bufname('%'), 'webmarks://webmarks')
   call s:assert.not_equals(getmatches(), [])
 endfunction
 
@@ -398,9 +398,63 @@ endfunction
 
 function! s:suite.help_lists_keys() abort
   Webmarks
-  let l:out = execute('normal g?')
-  call s:assert.match(l:out, '<CR>\s\+open')
-  call s:assert.match(l:out, 'g?\s\+help')
+  let l:out = execute('normal ?')
+  call s:assert.match(l:out, 'webmarks mappings:')
+  call s:assert.match(l:out, '<CR>\s\+open the bookmark')
+  call s:assert.match(l:out, '?\s\+show this list')
+  call s:assert.match(l:out, 's\s\+search with fzf')
+  call s:assert.not_match(l:out, '<Leader>')
+  call s:assert.equals(maparg('?', 'n'), '<Plug>(webmarks-help)')
+  call s:assert.equals(bufname('%'), 'webmarks://webmarks')
+endfunction
+
+function! s:suite.keys_that_clash_get_the_leader() abort
+  " the user's own prefixes (like `ss`, `sv`, `qf`) and a plugin's `ds`
+  nnoremap ss :echo<CR>
+  nnoremap qf :echo<CR>
+  nnoremap ds :echo<CR>
+  nnoremap S :echo<CR>
+  try
+    Webmarks
+    call s:assert.equals(maparg('<Leader>s', 'n'), '<Plug>(webmarks-search)')
+    call s:assert.equals(maparg('<Leader>q', 'n'), '<Plug>(webmarks-close)')
+    call s:assert.equals(maparg('<Leader>d', 'n'), '<Plug>(webmarks-delete)')
+    call s:assert.equals(maparg('<Leader>S', 'n'), '<Plug>(webmarks-sort-recent)')
+    " the plain keys are left to the user's mappings
+    call s:assert.equals(maparg('s', 'n'), '')
+    call s:assert.equals(maparg('ss', 'n'), ':echo<CR>')
+    " keys without a clash stay plain (and <nowait>)
+    call s:assert.equals(maparg('a', 'n'), '<Plug>(webmarks-add)')
+    call s:assert.true(maparg('a', 'n', 0, 1).nowait)
+    call s:assert.false(maparg('<Leader>s', 'n', 0, 1).nowait)
+    let l:out = execute('normal ?')
+    call s:assert.match(l:out, '<Leader>s\s\+search with fzf')
+    call s:assert.match(l:out, '<Leader> is ')
+    " the leader keys work
+    call s:press("\\S")
+    call s:assert.equals(b:webmarks.policy.criterion, 'recent')
+    " and survive a round trip through edit mode
+    normal i
+    call s:assert.equals(maparg('<Leader>S', 'n'), '')
+    call s:assert.equals(maparg('<Leader>q', 'n'), '<Plug>(webmarks-close)')
+    edit!
+    call s:assert.equals(maparg('<Leader>S', 'n'), '<Plug>(webmarks-sort-recent)')
+  finally
+    nunmap ss
+    nunmap qf
+    nunmap ds
+    nunmap S
+  endtry
+endfunction
+
+function! s:suite.help_in_edit_mode() abort
+  Webmarks
+  normal i
+  let l:out = execute('normal ?')
+  call s:assert.match(l:out, 'edit mode')
+  call s:assert.match(l:out, ':w\s\+apply')
+  call s:assert.not_match(l:out, 'search with fzf')
+  call s:assert.equals(b:webmarks.mode, 'edit')
 endfunction
 
 function! s:suite.user_mapping_wins() abort

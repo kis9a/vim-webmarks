@@ -111,7 +111,7 @@ function! s:suite.wq_with_errors_keeps_the_window() abort
   let l:wins = winnr('$')
   silent! wq
   call s:assert.equals(winnr('$'), l:wins)
-  call s:assert.equals(bufname('%'), 'webmarks://tree')
+  call s:assert.equals(bufname('%'), 'webmarks://webmarks')
 endfunction
 
 function! s:suite.reload_bang_discards() abort
@@ -154,7 +154,7 @@ function! s:suite.q_warns_when_modified() abort
   setlocal nomodified
   normal q
   call s:assert.equals(b:webmarks.mode, 'view')
-  call s:assert.equals(bufname('%'), 'webmarks://tree')
+  call s:assert.equals(bufname('%'), 'webmarks://webmarks')
 endfunction
 
 function! s:suite.hidden_with_quit_and_reopened() abort
@@ -180,7 +180,7 @@ endfunction
 function! s:suite.other_tab_window_gets_edit_settings() abort
   Webmarks
   let l:buf = bufnr('%')
-  tab sbuffer webmarks://tree
+  tab sbuffer webmarks://webmarks
   let l:other = win_getid()
   tabprevious
   call webmarks#ui#tree#focus('bookmark', 'b1')
@@ -273,11 +273,11 @@ endfunction
 
 function! s:suite.q_is_still_listed_after_edit_mode() abort
   Webmarks
-  let l:keys = copy(b:webmarks.mapped_keys)
+  let l:keys = copy(b:webmarks.mappings)
   normal i
   edit!
-  call s:assert.equals(b:webmarks.mapped_keys, l:keys)
-  call s:assert.match(execute('normal g?'), 'q\s\+close')
+  call s:assert.equals(b:webmarks.mappings, l:keys)
+  call s:assert.match(execute('normal ?'), 'q\s\+close')
   call s:assert.equals(maparg('a', 'n'), '<Plug>(webmarks-add)')
 endfunction
 
