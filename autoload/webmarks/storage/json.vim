@@ -128,7 +128,7 @@ function! webmarks#storage#json#decode(lines, path) abort
     return s:err('schema_unsupported', printf('unsupported schema_version %d in %s', l:ver, l:file))
   endif
   let l:next = get(l:root, 'next_id', v:null)
-  if type(l:next) != v:t_number || l:next < 1 || l:next > 999999999
+  if type(l:next) != v:t_number || l:next < 1 || l:next > 1000000000
     return s:invalid(l:file, 'missing or bad next_id')
   endif
   let l:folders_in = get(l:root, 'folders', v:null)
@@ -136,6 +136,7 @@ function! webmarks#storage#json#decode(lines, path) abort
   if type(l:folders_in) != v:t_list || type(l:bookmarks_in) != v:t_list
     return s:invalid(l:file, 'folders and bookmarks must be arrays')
   endif
+  let l:warnings = []
   let l:folders = []
   for l:f in l:folders_in
     let l:r = webmarks#domain#folder#validate(l:f)
@@ -143,6 +144,9 @@ function! webmarks#storage#json#decode(lines, path) abort
       return s:invalid(l:file, l:r.error)
     endif
     call add(l:folders, l:r.value)
+    if l:r.warning !=# ''
+      call add(l:warnings, l:file . ': ' . l:r.warning)
+    endif
   endfor
   let l:bookmarks = []
   for l:b in l:bookmarks_in
@@ -151,6 +155,9 @@ function! webmarks#storage#json#decode(lines, path) abort
       return s:invalid(l:file, l:r.error)
     endif
     call add(l:bookmarks, l:r.value)
+    if l:r.warning !=# ''
+      call add(l:warnings, l:file . ': ' . l:r.warning)
+    endif
   endfor
   let l:r = webmarks#domain#folder#validate_all(l:folders, l:bookmarks)
   if !l:r.ok
@@ -158,7 +165,6 @@ function! webmarks#storage#json#decode(lines, path) abort
   endif
   " Business-rule slips from a hand edit are tolerated with a warning so
   " one bad line does not lock the user out.
-  let l:warnings = []
   " same rule as domain/bookmark#find_duplicate (exact match), indexed
   let l:owner = {}
   for l:b in l:bookmarks
@@ -269,7 +275,9 @@ function! webmarks#storage#json#save(path, data, expected_mtime) abort
   try
     let l:dir = fnamemodify(a:path, ':h')
     if !isdirectory(l:dir)
-      call mkdir(l:dir, 'p', 0700)
+      call mkdir(l:dir, 'p')
+      " only the directory of the file is private (not ~/.local etc.)
+      call setfperm(l:dir, 'rwx------')
     endif
     " never write through a leftover (or planted) file or link of that name
     call delete(l:tmp)

@@ -374,3 +374,8 @@ function! s:suite.escaped_names_are_unescaped() abort
   call s:assert.equals(s:one('\# hash/').name, '# hash')
   call s:assert.equals(s:one('  \\back  https://a.example').name, '\back')
 endfunction
+
+function! s:suite.only_the_written_escapes_are_removed() abort
+  call s:assert.equals(s:one('  \foo  https://a.example').name, '\foo')
+  call s:assert.equals(s:one("  \\★ x  https://a.example").name, "★ x")
+endfunction

@@ -46,12 +46,13 @@ endfunction
 
 " Is there someone to answer a prompt? Neovim: an attached UI (a headless
 " Neovim started from a terminal still has 'ttyin'). Vim: a terminal and
-" not Ex mode (vim -e -s reads the script, not the keyboard), or the GUI.
+" not Ex mode (vim -e -s reads the script, not the keyboard; interactive
+" Ex mode loses prompts too, an accepted limit), or the GUI.
 function! webmarks#ui#prompt#has_tty() abort
   if has('nvim')
     return exists('*nvim_list_uis') && !empty(nvim_list_uis())
   endif
-  return has('gui_running') || (has('ttyin') && has('ttyout') && mode(1) !~# '^c[ve]')
+  return has('gui_running') || (has('ttyin') && mode(1) !~# '^c[ve]')
 endfunction
 
 " text(prompt, default) -> Result {value}

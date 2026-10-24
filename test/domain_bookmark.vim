@@ -158,7 +158,7 @@ endfunction
 
 function! s:suite.validate_rejects() abort
   let l:cases = [
-        \ ['id', 'x1'], ['url', 'ftp://a'], ['display_name', "a\tb"], ['display_name', ''],
+        \ ['id', 'x1'], ['url', 'ftp://a'], ['display_name', "\xff"], ['display_name', ''],
         \ ['name_source', 'auto'], ['folder_id', 3], ['folder_id', 'b1'], ['is_favorite', 1],
         \ ['created_at', 1.5], ['usage', []],
         \ ]
@@ -193,4 +193,14 @@ function! s:suite.validate_rejects_huge_ids() abort
   call s:assert.equals(webmarks#domain#bookmark#validate(l:b).code, 'invalid_data')
   let l:b.id = 'b999999999'
   call s:assert.true(webmarks#domain#bookmark#validate(l:b).ok)
+endfunction
+
+function! s:suite.validate_cleans_names_with_a_warning() abort
+  let l:b = s:new()
+  let l:b.display_name = "Ab\u00adc \u27e8x\u27e9"
+  let l:r = webmarks#domain#bookmark#validate(l:b)
+  call s:assert.true(l:r.ok)
+  call s:assert.equals(l:r.value.display_name, 'Abc x')
+  call s:assert.match(l:r.warning, 'cleaned')
+  call s:assert.equals(webmarks#domain#bookmark#validate(s:new()).warning, '')
 endfunction

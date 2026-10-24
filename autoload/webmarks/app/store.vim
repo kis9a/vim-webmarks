@@ -109,6 +109,10 @@ endfunction
 " next_id(data, kind) -> [id, data']; kind is 'b' or 'f' (one counter).
 function! webmarks#app#store#next_id(data, kind) abort
   let l:data = copy(a:data)
+  if l:data.next_id > 999999999
+    " ids have at most 9 digits; mutate() turns this into internal_error
+    throw 'webmarks: no ids left (next_id ' . l:data.next_id . ')'
+  endif
   let l:id = printf('%s%d', a:kind, l:data.next_id)
   let l:data.next_id = l:data.next_id + 1
   return [l:id, l:data]

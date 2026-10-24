@@ -66,7 +66,7 @@ function! webmarks#domain#html#extract_title(html) abort
     let l:content = matchstr(l:matched, '\c<title\%(\s\+[^>]*\)\?>\s*\zs\_.\{-}\ze\s*</title>')
     let l:content = substitute(l:content, '<[^>]*>', '', 'g')
     " a title is a line of text; do not decode megabytes of it
-    let l:content = strpart(l:content, 0, 8192)
+    let l:content = strcharpart(l:content, 0, 4096)
     let l:content = webmarks#domain#html#decode_entities(l:content)
     let l:content = substitute(l:content, '\_s\+', ' ', 'g')
     let l:content = trim(l:content)

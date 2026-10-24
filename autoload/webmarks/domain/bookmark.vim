@@ -180,10 +180,14 @@ function! webmarks#domain#bookmark#validate(b) abort
     return s:invalid(l:id, 'bad url')
   endif
   let l:name = get(a:b, 'display_name', v:null)
+  " a name the current rules would clean (a hand edit, an older version):
+  " use the cleaned name and warn, rather than refuse the whole file
   let l:n = webmarks#domain#text#sanitize(l:name)
-  if !l:n.ok || l:n.value !=# l:name
+  if !l:n.ok
     return s:invalid(l:id, 'bad display_name')
   endif
+  let l:warning = l:n.value !=# l:name ? 'bookmark ' . l:id . ': display_name cleaned to ' . string(l:n.value) : ''
+  let l:name = l:n.value
   let l:source = get(a:b, 'name_source', v:null)
   if type(l:source) != v:t_string || index(s:name_sources, l:source) < 0
     return s:invalid(l:id, 'bad name_source')
@@ -222,7 +226,7 @@ function! webmarks#domain#bookmark#validate(b) abort
   if l:last isnot v:null && type(l:last) != v:t_number
     return s:invalid(l:id, 'bad usage.last_launch_at')
   endif
-  return s:ok({'changed': v:false, 'value': {
+  return s:ok({'changed': v:false, 'warning': l:warning, 'value': {
         \ 'id': l:id,
         \ 'url': l:url,
         \ 'display_name': l:name,

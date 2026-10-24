@@ -16,7 +16,9 @@ let s:control = '[[:cntrl:]\x7f\u0080-\u009f]'
 " and (below, by code point: Neovim's regex cannot match them) the tag
 " characters U+E0000..U+E007F: invisible or blank-looking names.
 let s:invisible = '[\u200b-\u200f\u202a-\u202e\u2066-\u2069\u2028\u2029\ufeff'
-      \ . '\u00ad\u034f\u061c\u115f\u1160\u180e\u2060-\u2064\u2800\u3164\uffa0]'
+      \ . '\u00ad\u034f\u061c\u115f\u1160\u180e\u2060-\u2064\u2800\u3164\uffa0'
+      \ . '\ufe00-\ufe0f\ufff9-\ufffb]'
+let s:spaces = '[\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]'
 " The id markers of edit mode can never be part of a name.
 let s:markers = '[\u27e8\u27e9]'
 
@@ -38,6 +40,8 @@ function! webmarks#domain#text#sanitize(s) abort
     " character as composing characters
     let l:v = list2str(filter(str2list(l:v), 'v:val < 0xe0000 || v:val > 0xe007f'))
   endif
+  " Unicode spaces count as spaces (so a name of U+3000 alone is empty)
+  let l:v = substitute(l:v, s:spaces, ' ', 'g')
   let l:v = trim(substitute(l:v, '\s\+', ' ', 'g'))
   if strchars(l:v) > s:max_chars
     let l:v = trim(strcharpart(l:v, 0, s:max_chars))
@@ -70,8 +74,13 @@ function! webmarks#domain#text#is_utf8(s) abort
   " encoded surrogates and code points above U+10FFFF: Vim reads them as one
   " character, Neovim's json_encode()/json_decode() reject them. Checked on
   " code points, as Neovim may attach a code point to the previous character.
-  return empty(filter(str2list(a:s), '(v:val >= 0xd800 && v:val <= 0xdfff) || v:val > 0x10ffff'))
-    \ ? v:true : v:false
+  let l:cps = str2list(a:s)
+  if !empty(filter(copy(l:cps), '(v:val >= 0xd800 && v:val <= 0xdfff) || v:val > 0x10ffff'))
+    return v:false
+  endif
+  " over-long encodings (e.g. 0xe0 0x80 0xaf for '/'): encoding the code
+  " points again gives the shortest form, so the bytes differ
+  return list2str(l:cps) ==# a:s ? v:true : v:false
 endfunction
 
 function! s:err(code, msg) abort

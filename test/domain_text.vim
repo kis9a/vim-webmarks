@@ -57,3 +57,16 @@ function! s:suite.surrogates_and_out_of_range_are_invalid() abort
   call s:assert.equals(s:san(nr2char(0xd800, 1)).code, 'invalid_text')
   call s:assert.equals(s:san('a' . nr2char(0x110000, 1)).code, 'invalid_text')
 endfunction
+
+function! s:suite.overlong_utf8_is_invalid() abort
+  call s:assert.equals(s:san("Evil\xe0\x80\xafTitle").code, 'invalid_text')
+  call s:assert.equals(s:san("\xf0\x80\x80\xaf").code, 'invalid_text')
+  call s:assert.equals(s:san("\xc0\xaf").code, 'invalid_text')
+  call s:assert.true(s:san("ok é \U0001f600").ok)
+endfunction
+
+function! s:suite.unicode_spaces_and_selectors() abort
+  call s:assert.equals(s:san("　").code, 'empty_name')
+  call s:assert.equals(s:san("a 　b").value, 'a b')
+  call s:assert.equals(s:san(nr2char(0xfe0f)).code, 'empty_name')
+endfunction

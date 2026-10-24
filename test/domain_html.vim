@@ -196,3 +196,10 @@ function! s:suite.test_many_references_are_fast() abort
   call s:assert.true(reltimefloat(reltime(l:start)) < 1.0)
   call s:assert.match(l:t, '^A\{100,}')
 endfunction
+
+" Added (review): the size cap never splits a character
+function! s:suite.test_cap_keeps_characters_whole() abort
+  let l:t = webmarks#domain#html#extract_title('<title>' . repeat('a', 4095) . repeat('あ', 10) . '</title>')
+  call s:assert.true(webmarks#domain#text#is_utf8(l:t))
+  call s:assert.equals(strchars(l:t), 4096)
+endfunction

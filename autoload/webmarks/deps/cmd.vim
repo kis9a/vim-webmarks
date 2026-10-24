@@ -69,7 +69,9 @@ endfunction
 " and reports success: the command is still running, so it did start.
 function! s:run_detached(argv) abort
   try
-    let l:job = job_start(a:argv, {'in_io': 'null', 'out_io': 'null', 'err_io': 'null'})
+    " stoponexit '': a browser started this way must outlive Vim
+    let l:job = job_start(a:argv, {'in_io': 'null', 'out_io': 'null', 'err_io': 'null',
+          \ 'stoponexit': ''})
   catch /.*/
     return s:result(-1, v:exception)
   endtry

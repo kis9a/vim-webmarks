@@ -206,14 +206,17 @@ function! webmarks#domain#folder#validate(f) abort
   endif
   let l:name = get(a:f, 'name', v:null)
   let l:n = webmarks#domain#text#sanitize(l:name)
-  if !l:n.ok || l:n.value !=# l:name
+  if !l:n.ok
     return s:invalid(l:id, 'bad name')
   endif
+  let l:warning = l:n.value !=# l:name ? 'folder ' . l:id . ': name cleaned to ' . string(l:n.value) : ''
+  let l:name = l:n.value
   let l:parent = get(a:f, 'parent_id', 0)
   if l:parent isnot v:null && (type(l:parent) != v:t_string || l:parent !~# '^f[1-9]\d\{0,8}$')
     return s:invalid(l:id, 'bad parent_id')
   endif
-  return s:ok({'changed': v:false, 'value': {'id': l:id, 'name': l:name, 'parent_id': l:parent}})
+  return s:ok({'changed': v:false, 'warning': l:warning,
+        \ 'value': {'id': l:id, 'name': l:name, 'parent_id': l:parent}})
 endfunction
 
 " validate_all(folders, bookmarks) -> Result: H1..H5 and unique ids.

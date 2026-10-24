@@ -81,3 +81,18 @@ function! s:suite.a_command_that_leaves_a_child_running_returns_at_once() abort
   let g:webmarks_browser_cmd = ['sh', '-c', 'exit 5', 'sh']
   call s:assert.equals(webmarks#deps#browser#open('https://a.example').code, 'browser_failed')
 endfunction
+
+function! s:suite.a_long_running_browser_outlives_the_wait() abort
+  if has('nvim') || !has('job')
+    return
+  endif
+  unlet g:webmarks_test.cmd_runner
+  let l:mark = s:dir . '/alive'
+  let g:webmarks_browser_cmd = ['sh', '-c', 'sleep 6; touch "$1"', 'sh']
+  let l:start = reltime()
+  " the URL is $0 here; the mark file is passed by wrapping the command
+  let g:webmarks_browser_cmd = ['sh', '-c', 'sleep 6; : > ' . shellescape(l:mark), 'sh']
+  call s:assert.true(webmarks#deps#browser#open('https://a.example').ok)
+  let l:waited = reltimefloat(reltime(l:start))
+  call s:assert.true(l:waited >= 4.5 && l:waited < 6.0, string(l:waited))
+endfunction

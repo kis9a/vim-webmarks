@@ -95,7 +95,7 @@ endfunction
 " app/listing#edit_lines writes a name that starts with '*', '★', '#' or
 " '\' with a leading '\' (else it would read as the star slot or a comment)
 function! s:unescape(name) abort
-  return a:name =~# '^\\' ? a:name[1:] : a:name
+  return a:name =~# '^\\[*#\\' . "\u2605" . ']' ? a:name[1:] : a:name
 endfunction
 
 " The column that decides nesting: a folder at depth d sits at 2(d-1),

@@ -260,3 +260,29 @@ function! s:suite.duplicate_key_inside_a_bookmark_is_explained() abort
     call s:assert.match(l:r.error, 'duplicate key')
   endif
 endfunction
+
+function! s:suite.last_id_still_loads_and_then_refuses_new_ids() abort
+  let l:d = s:sample()
+  let l:d.bookmarks[0].id = 'b999999999'
+  let l:d.next_id = 7
+  call webmarks#storage#json#save(s:path, l:d, -1)
+  let l:l = webmarks#storage#json#load(s:path)
+  call s:assert.true(l:l.ok, string(l:l))
+  call s:assert.equals(l:l.data.next_id, 1000000000)
+  " a store with no ids left: adding fails, the file stays readable
+  let g:webmarks_file = s:path
+  call webmarks#app#store#_reset()
+  let l:r = webmarks#app#bookmark#add('https://new.example', '', v:null, 1)
+  call s:assert.equals(l:r.code, 'internal_error')
+  call s:assert.true(webmarks#storage#json#load(s:path).ok)
+endfunction
+
+function! s:suite.names_from_an_older_file_are_cleaned_not_refused() abort
+  let l:lines = webmarks#storage#json#encode(s:sample()).lines
+  let l:lines = map(l:lines, 'substitute(v:val, ''"name": "Dev"'', ''"name": "D\\u00adev"'', "")')
+  call s:write(l:lines)
+  let l:l = webmarks#storage#json#load(s:path)
+  call s:assert.true(l:l.ok, string(l:l))
+  call s:assert.equals(filter(copy(l:l.data.folders), 'v:val.id ==# "f1"')[0].name, 'Dev')
+  call s:assert.match(join(l:l.warnings), 'f1: name cleaned')
+endfunction
