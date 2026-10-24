@@ -131,13 +131,13 @@ function! webmarks#app#listing#edit_lines(data, policy, now) abort
   for l:row in webmarks#app#listing#rows(a:data, a:policy, 'tree', a:now, [])
     if l:row.kind ==# 'folder'
       let l:f = l:row.folder
-      call add(l:lines, repeat('  ', l:row.depth - 1) . s:escape(s:clean(l:f.name)) . '/ ' . s:marker(l:row.id))
+      call add(l:lines, repeat('  ', l:row.depth - 1) . webmarks#app#listing#escape_name(s:clean(l:f.name)) . '/' . webmarks#app#listing#marker(l:row.id))
       let l:shown[l:row.id] = {'name': l:f.name, 'parent': l:f.parent_id}
     elseif l:row.kind ==# 'bookmark'
       let l:b = l:row.bookmark
       let l:name = l:b.name_source ==# 'url' ? '' : l:b.display_name
       call add(l:lines, repeat('  ', l:row.depth) . (l:b.is_favorite ? s:star : s:nostar)
-            \ . (l:name ==# '' ? '' : s:escape(s:clean(l:name)) . '  ') . l:b.url . ' ' . s:marker(l:row.id))
+            \ . (l:name ==# '' ? '' : webmarks#app#listing#escape_name(s:clean(l:name)) . '  ') . l:b.url . webmarks#app#listing#marker(l:row.id))
       let l:shown[l:row.id] = {'name': l:name, 'url': l:b.url,
             \ 'favorite': l:b.is_favorite, 'parent': l:b.folder_id}
     else
@@ -151,14 +151,42 @@ function! webmarks#app#listing#edit_lines(data, policy, now) abort
   return {'lines': l:lines, 'ids': l:ids, 'shown': l:shown}
 endfunction
 
-" A name that would read as the star slot, a comment or an escape gets a
-" leading backslash (app/edit removes it again).
-function! s:escape(name) abort
-  return a:name =~# '^[*#\\★]' ? '\' . a:name : a:name
+" --- the edit-mode line grammar, in one place (app/edit parses with it,
+" ui/tree conceals with it) -------------------------------------------------
+
+let s:open_mark = "\u27e8"
+let s:close_mark = "\u27e9"
+" names starting with one of these get a leading '\' in edit lines
+let s:escaped_first = '[*#\\' . s:star[0 : strlen(s:star) - 2] . ']'
+
+" ' ⟨b12⟩': the id marker written at the end of an edit line
+function! webmarks#app#listing#marker(id) abort
+  return ' ' . s:open_mark . a:id . s:close_mark
 endfunction
 
-function! s:marker(id) abort
-  return "\u27e8" . a:id . "\u27e9"
+" A pattern matching one marker (with its leading blank); \1 is the id.
+function! webmarks#app#listing#marker_pattern() abort
+  return '\s\?' . s:open_mark . '\([bf]\d\+\)' . s:close_mark
+endfunction
+
+" The pattern the UI conceals.
+function! webmarks#app#listing#conceal_pattern() abort
+  return '\s\?' . s:open_mark . '[bf]\d\+' . s:close_mark
+endfunction
+
+" The 2-column star slot of a bookmark line: [indent, slot, rest].
+function! webmarks#app#listing#bookmark_head_pattern() abort
+  return '^\( *\)\(' . s:star . '\|\* \|  \)\(.*\)$'
+endfunction
+
+" A name that would read as the star slot, a comment or an escape gets a
+" leading backslash; unescape_name() removes exactly that one.
+function! webmarks#app#listing#escape_name(name) abort
+  return a:name =~# '^' . s:escaped_first ? '\' . a:name : a:name
+endfunction
+
+function! webmarks#app#listing#unescape_name(name) abort
+  return a:name =~# '^\\' . s:escaped_first ? a:name[1:] : a:name
 endfunction
 
 " candidates(data, policy, now) -> List of "id\t★ name\tpath\turl"

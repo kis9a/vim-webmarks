@@ -160,10 +160,6 @@ function! webmarks#domain#bookmark#find_duplicate(bookmarks, url, except_id) abo
   return v:null
 endfunction
 
-function! webmarks#domain#bookmark#id_number(id) abort
-  return str2nr(a:id[1:])
-endfunction
-
 " validate(b) -> Result {value}: type/constraint check of a stored
 " bookmark; `value` is the normalized dict (rank as Float, known keys only).
 function! webmarks#domain#bookmark#validate(b) abort
@@ -180,17 +176,28 @@ function! webmarks#domain#bookmark#validate(b) abort
     return s:invalid(l:id, 'bad url')
   endif
   let l:name = get(a:b, 'display_name', v:null)
-  " a name the current rules would clean (a hand edit, an older version):
-  " use the cleaned name and warn, rather than refuse the whole file
-  let l:n = webmarks#domain#text#sanitize(l:name)
-  if !l:n.ok
-    return s:invalid(l:id, 'bad display_name')
-  endif
-  let l:warning = l:n.value !=# l:name ? 'bookmark ' . l:id . ': display_name cleaned to ' . string(l:n.value) : ''
-  let l:name = l:n.value
   let l:source = get(a:b, 'name_source', v:null)
   if type(l:source) != v:t_string || index(s:name_sources, l:source) < 0
     return s:invalid(l:id, 'bad name_source')
+  endif
+  let l:warning = ''
+  if l:source ==# 'url'
+    " a provisional name is the URL itself (not cut at 200 characters)
+    if l:name !=# l:url
+      let l:warning = 'bookmark ' . l:id . ': provisional display_name set to the URL'
+      let l:name = l:url
+    endif
+  else
+    " a name the current rules would clean (a hand edit, an older version):
+    " use the cleaned name and warn, rather than refuse the whole file
+    let l:n = webmarks#domain#text#sanitize(l:name)
+    if !l:n.ok
+      return s:invalid(l:id, 'bad display_name')
+    endif
+    if l:n.value !=# l:name
+      let l:warning = 'bookmark ' . l:id . ': display_name cleaned to ' . string(l:n.value)
+      let l:name = l:n.value
+    endif
   endif
   let l:folder = get(a:b, 'folder_id', 0)
   if l:folder isnot v:null && (type(l:folder) != v:t_string || l:folder !~# '^f[1-9]\d\{0,8}$')

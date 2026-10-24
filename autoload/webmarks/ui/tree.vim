@@ -720,7 +720,9 @@ endfunction
 
 function! s:do_add() abort
   let l:folder = s:target_folder()
-  let l:url = webmarks#ui#prompt#text('URL: ', matchstr(expand('<cfile>'), '^https\?://\S\+'))
+  " no <cfile> default here: under the cursor is a tree line (a provisional
+  " name is a URL, which would be pre-filled and easily doubled)
+  let l:url = webmarks#ui#prompt#text('URL: ', '')
   if !s:report(l:url) || trim(l:url.value) ==# ''
     return
   endif
@@ -1005,7 +1007,7 @@ function! webmarks#ui#tree#_edit_window_on() abort
   call s:apply_window_options()
   call s:clear_matches()
   if !exists('w:webmarks_conceal_id')
-    let w:webmarks_conceal_id = matchadd('Conceal', '\s\?' . "⟨" . '[bf]\d\+' . "⟩",
+    let w:webmarks_conceal_id = matchadd('Conceal', webmarks#app#listing#conceal_pattern(),
           \ 20, -1, {'conceal': ''})
   endif
 endfunction

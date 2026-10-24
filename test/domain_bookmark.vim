@@ -163,7 +163,8 @@ function! s:suite.validate_rejects() abort
         \ ['created_at', 1.5], ['usage', []],
         \ ]
   for [l:k, l:v] in l:cases
-    let l:b = s:new()
+    " a manual name: the display_name rules apply to it
+    let l:b = s:new('https://example.com', 'Name')
     let l:b[l:k] = l:v
     let l:r = webmarks#domain#bookmark#validate(l:b)
     call s:assert.equals(l:r.code, 'invalid_data', l:k . '=' . string(l:v))
@@ -196,11 +197,22 @@ function! s:suite.validate_rejects_huge_ids() abort
 endfunction
 
 function! s:suite.validate_cleans_names_with_a_warning() abort
-  let l:b = s:new()
+  let l:b = s:new('https://example.com', 'Name')
   let l:b.display_name = "Ab\u00adc \u27e8x\u27e9"
   let l:r = webmarks#domain#bookmark#validate(l:b)
   call s:assert.true(l:r.ok)
   call s:assert.equals(l:r.value.display_name, 'Abc x')
   call s:assert.match(l:r.warning, 'cleaned')
   call s:assert.equals(webmarks#domain#bookmark#validate(s:new()).warning, '')
+endfunction
+
+function! s:suite.provisional_name_is_the_url_even_when_long() abort
+  let l:long = 'https://example.com/' . repeat('x', 300)
+  let l:b = webmarks#domain#bookmark#new('b1', l:long, '', v:null, 1).bookmark
+  let l:r = webmarks#domain#bookmark#validate(l:b)
+  call s:assert.equals([l:r.value.display_name, l:r.warning], [l:long, ''])
+  let l:b.display_name = 'stale'
+  let l:r = webmarks#domain#bookmark#validate(l:b)
+  call s:assert.equals(l:r.value.display_name, l:long)
+  call s:assert.match(l:r.warning, 'provisional')
 endfunction

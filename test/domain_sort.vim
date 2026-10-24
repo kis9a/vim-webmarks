@@ -51,3 +51,22 @@ function! s:suite.normalize() abort
   call s:assert.equals(webmarks#domain#sort#normalize({'criterion': 'bogus', 'favorite_first': 'x'}, l:d), l:d)
   call s:assert.equals(webmarks#domain#sort#normalize(3, l:d), l:d)
 endfunction
+
+function! s:suite.sort_agrees_with_compare() abort
+  " sort() uses precomputed keys; compare() is the rule as written in the
+  " design. They must give the same order for every policy.
+  let l:list = [
+        \ s:rb('b1', 'beta', v:false, 300, 10), s:rb('b2', 'Alpha', v:false, v:null, 0),
+        \ s:rb('b3', 'gamma', v:true, 100, 5), s:rb('b4', 'delta', v:false, 200, 20),
+        \ s:rb('b10', 'same', v:false, v:null, 0), s:rb('b9', 'Same', v:true, 50, 20),
+        \ s:rb('b5', 'same s', v:false, 300, 10), s:rb('b6', "日本", v:false, 1, 1),
+        \ s:rb('b7', 'a', v:false, 300, 999999), s:rb('b8', 'A', v:false, v:null, 0)]
+  for l:c in ['name', 'recent', 'frecency']
+    for l:f in [v:false, v:true]
+      let l:p = {'criterion': l:c, 'favorite_first': l:f}
+      let l:by_keys = map(webmarks#domain#sort#sort(l:p, copy(l:list)), 'v:val.bookmark.id')
+      let l:by_compare = map(sort(copy(l:list), function('webmarks#domain#sort#compare', [l:p])), 'v:val.bookmark.id')
+      call s:assert.equals(l:by_keys, l:by_compare, string(l:p))
+    endfor
+  endfor
+endfunction

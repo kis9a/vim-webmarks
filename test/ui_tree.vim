@@ -502,3 +502,18 @@ function! s:suite.open_in_place_over_a_modified_buffer_fails_cleanly() abort
   call s:assert.equals(getline(1), 'unsaved')
   setlocal nomodified
 endfunction
+
+function! s:suite.add_in_the_tree_has_no_url_default() abort
+  call webmarks#app#bookmark#add('https://a.example/one', '', v:null, 1)
+  let s:defaults = []
+  let g:webmarks_test.prompt.text = function('s:record_default')
+  Webmarks
+  call cursor(1, 1)
+  call s:press('a')
+  call s:assert.equals(s:defaults[0], '')
+endfunction
+
+function! s:record_default(prompt, default) abort
+  call add(s:defaults, a:default)
+  return {'ok': v:false, 'code': 'cancelled', 'error': ''}
+endfunction

@@ -75,3 +75,9 @@ function! s:suite.stops_after_max_bytes() abort
   call s:assert.equals(strlen(l:r.stdout), 1048576)
   call s:assert.true(reltimefloat(reltime(l:start)) < 5.0)
 endfunction
+
+function! s:suite.a_fast_endless_producer_is_cut_without_running_out_of_memory() abort
+  " `yes` floods the main loop; the result must still be capped
+  let l:r = s:run(['yes', 'abcdefghijklmnopqrstuvwxyz0123456789'], {'max_bytes': 1048576})
+  call s:assert.equals(strlen(l:r.stdout), 1048576)
+endfunction

@@ -12,10 +12,8 @@ let s:save_cpo = &cpoptions
 set cpoptions&vim
 
 let s:max_errors = 10
-let s:marker = '\s\?' . "⟨" . '\([bf]\d\+\)' . "⟩"
 " (documentation of the URL rule; parse_line() implements it directly)
 let s:url_token = '\%(^\|\s\+\)\zshttps\?://\S\+$'
-let s:bookmark_head = '^\( *\)\(' . "★" . ' \|\* \|  \)\(.*\)$'
 
 function! s:error(errors, lnum, code, msg) abort
   if len(a:errors) < s:max_errors
@@ -38,14 +36,20 @@ function! s:parse_line(text) abort
     return {'code': 'parse_error', 'msg': 'bad indent (use spaces)'}
   endif
   let l:id = ''
-  let l:m = matchlist(l:line, s:marker)
-  if !empty(l:m)
-    let l:id = l:m[1]
-    let l:line = substitute(l:line, s:marker, '', '')
-    if l:line =~# s:marker
+  let l:pat = webmarks#app#listing#marker_pattern()
+  let [l:mark, l:start, l:end] = matchstrpos(l:line, l:pat)
+  if l:start >= 0
+    let l:id = matchlist(l:mark, l:pat)[1]
+    let l:after = strpart(l:line, l:end)
+    if l:after =~# l:pat
       return {'code': 'parse_error', 'msg': 'multiple ids on one line'}
     endif
-    let l:line = substitute(l:line, '[[:space:]\r]*$', '', '')
+    " text typed after the (concealed) id, e.g. with A, would silently
+    " become part of the URL
+    if l:after =~# '\S'
+      return {'code': 'parse_error', 'msg': 'text after the hidden id (edit before it, e.g. with $ then i)'}
+    endif
+    let l:line = substitute(strpart(l:line, 0, l:start), '[[:space:]\r]*$', '', '')
   endif
   if l:line =~# '^\s*$' || l:line =~# '^\s*#'
     return v:null
@@ -57,7 +61,7 @@ function! s:parse_line(text) abort
   " a folder marker decides (a folder name may end with a URL-like word)
   if l:id !~# '^f' && l:url =~# '^https\?://'
     let l:rest = strpart(l:line, 0, strlen(l:line) - strlen(l:url))
-    let l:h = matchlist(l:rest, s:bookmark_head)
+    let l:h = matchlist(l:rest, webmarks#app#listing#bookmark_head_pattern())
     if empty(l:h) || strlen(l:h[1]) % 2
       return {'code': 'parse_error', 'msg': 'bad indent (bookmark lines need the 2-column star slot)'}
     endif
@@ -66,7 +70,7 @@ function! s:parse_line(text) abort
       return {'code': 'invalid_url', 'msg': l:u.error}
     endif
     return {'kind': 'bookmark', 'id': l:id, 'depth': strlen(l:h[1]) / 2,
-          \ 'name': s:unescape(trim(l:h[3])), 'url': l:u.value, 'favorite': l:h[2] ==# '  ' ? v:false : v:true}
+          \ 'name': webmarks#app#listing#unescape_name(trim(l:h[3])), 'url': l:u.value, 'favorite': l:h[2] ==# '  ' ? v:false : v:true}
   endif
   if l:line =~# '/$'
     let l:h = matchlist(strpart(l:line, 0, strlen(l:line) - 1), '^\( *\)\(.*\)$')
@@ -77,25 +81,19 @@ function! s:parse_line(text) abort
     if l:depth > 2
       return {'code': 'depth_exceeded', 'msg': 'folders are limited to 2 levels'}
     endif
-    if s:unescape(trim(l:h[2])) ==# ''
+    if webmarks#app#listing#unescape_name(trim(l:h[2])) ==# ''
       return {'code': 'empty_name', 'msg': 'folder name is empty'}
     endif
     if l:id =~# '^b'
       return {'code': 'parse_error', 'msg': 'id ' . l:id . ' belongs to a bookmark'}
     endif
-    return {'kind': 'folder', 'id': l:id, 'depth': l:depth, 'name': s:unescape(trim(l:h[2])),
+    return {'kind': 'folder', 'id': l:id, 'depth': l:depth, 'name': webmarks#app#listing#unescape_name(trim(l:h[2])),
           \ 'url': '', 'favorite': v:false}
   endif
   if l:id =~# '^f'
     return {'code': 'parse_error', 'msg': 'a folder line must end with /'}
   endif
   return {'code': 'parse_error', 'msg': 'URL is required (or end the line with / for a folder)'}
-endfunction
-
-" app/listing#edit_lines writes a name that starts with '*', '★', '#' or
-" '\' with a leading '\' (else it would read as the star slot or a comment)
-function! s:unescape(name) abort
-  return a:name =~# '^\\[*#\\' . "\u2605" . ']' ? a:name[1:] : a:name
 endfunction
 
 " The column that decides nesting: a folder at depth d sits at 2(d-1),

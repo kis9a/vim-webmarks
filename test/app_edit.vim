@@ -89,9 +89,9 @@ endfunction
 function! s:suite.marker_anywhere_trailing_space_and_cr() abort
   let l:e = s:one('  name  https://a.example' . s:m('b1') . "  \r")
   call s:assert.equals([l:e.id, l:e.url], ['b1', 'https://a.example'])
-  " text appended after a concealed marker
-  let l:e2 = s:one('  name  https://a.example' . s:m('b1') . 'more')
-  call s:assert.equals(l:e2.id, 'b1')
+  " text appended after a concealed marker is refused (v8: it used to be
+  " silently appended to the URL)
+  call s:assert.equals(s:err(['  name  https://a.example' . s:m('b1') . 'more']).code, 'parse_error')
   call s:assert.match(s:err(['  x  https://a.example' . s:m('b1') . s:m('b2')]).error, 'multiple ids')
 endfunction
 
@@ -378,4 +378,20 @@ endfunction
 function! s:suite.only_the_written_escapes_are_removed() abort
   call s:assert.equals(s:one('  \foo  https://a.example').name, '\foo')
   call s:assert.equals(s:one("  \\★ x  https://a.example").name, "★ x")
+endfunction
+
+function! s:suite.text_after_the_hidden_id_is_an_error() abort
+  " `A` puts text after the concealed marker; it must not join the URL
+  let l:r = s:err(['  name  https://a.example/' . s:m('b1') . 'x'])
+  call s:assert.match(l:r.error, 'line 1: text after the hidden id')
+  " trailing blanks are fine
+  call s:assert.equals(s:one('  name  https://a.example/' . s:m('b1') . '  ').id, 'b1')
+endfunction
+
+function! s:suite.grammar_helpers_round_trip() abort
+  for l:name in ['* x', "★ x", '# x', '\x', 'plain', '\\']
+    call s:assert.equals(webmarks#app#listing#unescape_name(webmarks#app#listing#escape_name(l:name)), l:name)
+  endfor
+  call s:assert.equals(webmarks#app#listing#marker('b3'), s:m('b3'))
+  call s:assert.match(s:m('f12'), webmarks#app#listing#conceal_pattern())
 endfunction

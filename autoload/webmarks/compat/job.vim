@@ -73,6 +73,10 @@ function! s:collect(ctx, text) abort
   let a:ctx.bytes += strlen(a:text)
   if a:ctx.max > 0 && a:ctx.bytes > a:ctx.max
     let a:ctx.stopped = 1
+    if has('nvim')
+      " stop reading at once; the process is stopped next
+      silent! call chanclose(a:ctx.job, 'stdout')
+    endif
     call webmarks#compat#job#stop(a:ctx.job)
   endif
 endfunction
@@ -130,10 +134,26 @@ endfunction
 function! s:nvim_out(ctx, job, data, event) abort
   " data is a list of lines split on NL; consecutive callbacks continue
   " the previous last element. Re-joining with NL restores the bytes.
-  if a:data == ['']
+  if a:ctx.stopped || a:data == ['']
     return
   endif
-  call s:collect(a:ctx, join(a:data, "\n"))
+  if a:ctx.max > 0
+    " one callback can carry many MiB when the main loop was busy: take
+    " only the lines needed, never join the whole List
+    let l:need = a:ctx.max - a:ctx.bytes
+    let l:take = []
+    let l:size = 0
+    for l:line in a:data
+      call add(l:take, l:line)
+      let l:size += strlen(l:line) + 1
+      if l:size > l:need
+        break
+      endif
+    endfor
+    call s:collect(a:ctx, join(l:take, "\n"))
+  else
+    call s:collect(a:ctx, join(a:data, "\n"))
+  endif
 endfunction
 
 function! s:nvim_exit(ctx, job, status, event) abort
