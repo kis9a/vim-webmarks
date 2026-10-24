@@ -35,7 +35,7 @@ function! webmarks#domain#text#sanitize(s) abort
   let l:v = substitute(a:s, s:control, ' ', 'g')
   let l:v = substitute(l:v, s:invisible, '', 'g')
   let l:v = substitute(l:v, s:markers, '', 'g')
-  if max(str2list(l:v)) >= 0xe0000
+  if strlen(l:v) != strchars(l:v) && max(str2list(l:v)) >= 0xe0000
     " code points, not characters: Neovim attaches them to the previous
     " character as composing characters
     let l:v = list2str(filter(str2list(l:v), 'v:val < 0xe0000 || v:val > 0xe007f'))

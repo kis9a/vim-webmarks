@@ -113,12 +113,21 @@ function! webmarks#storage#json#decode(lines, path) abort
   catch /.*/
     return s:err('load_failed', 'cannot read ' . l:file . ': ' . substitute(v:exception, '^Vim\%((\a\+)\)\=:', '', ''))
   endtry
+  let l:r = s:decode_root(l:root, l:file)
+  " Neovim returns duplicate keys (and NUL in strings) as special dicts,
+  " which then fail validation with a confusing message; explain them (the
+  " walk only runs for a file that is invalid anyway)
+  if !l:r.ok && l:r.code ==# 'invalid_data' && has('nvim') && s:has_special(l:root, 0)
+    return s:invalid(l:file, 'duplicate key or NUL character in a string')
+  endif
+  return l:r
+endfunction
+
+function! s:decode_root(root, file) abort
+  let l:root = a:root
+  let l:file = a:file
   if type(l:root) != v:t_dict
     return s:invalid(l:file, 'top level is not an object')
-  endif
-  " Neovim returns duplicate keys (and NUL in strings) as special dicts
-  if s:has_special(l:root, 0)
-    return s:invalid(l:file, 'duplicate key or NUL character in a string')
   endif
   let l:ver = get(l:root, 'schema_version', v:null)
   if type(l:ver) != v:t_number || l:ver < 1
