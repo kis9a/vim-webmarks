@@ -1,0 +1,409 @@
+*webmarks.txt*	Web bookmarks in Vim: folders, frecency, fzf, a browser
+
+Author:  kis9a
+License: MIT
+
+==============================================================================
+CONTENTS						*webmarks-contents*
+
+  1. Introduction ............................ |webmarks-intro|
+  2. Quick start ............................. |webmarks-quickstart|
+  3. Commands ................................ |webmarks-commands|
+  4. The tree buffer ......................... |webmarks-tree|
+  5. Edit mode ............................... |webmarks-edit|
+  6. Options ................................. |webmarks-options|
+  7. Functions ............................... |webmarks-functions|
+  8. Ordering and frecency ................... |webmarks-frecency|
+  9. Titles .................................. |webmarks-titles|
+ 10. The data file ........................... |webmarks-file|
+ 11. Privacy ................................. |webmarks-privacy|
+ 12. Highlights .............................. |webmarks-highlights|
+ 13. Limitations ............................. |webmarks-limitations|
+ 14. Testing hooks ........................... |webmarks-testing|
+
+==============================================================================
+1. Introduction						*webmarks-intro*
+
+webmarks keeps web bookmarks in a JSON file and lets you add, organise,
+find and open them without leaving Vim.
+
+- Add a URL with |:WebmarksAdd|; the page title is fetched in the
+  background and replaces the URL as the name (unless you gave a name).
+- Two levels of folders, shown as a tree with Vim folds.
+- <CR> opens the bookmark in your browser and records the launch. The
+  order follows frecency (frequency x recency, as in rupa/z); favorites
+  can always come first.
+- |:WebmarksSearch| narrows the list with fzf in the same order.
+- Edit the whole tree as text and apply it with |:w| (|webmarks-edit|).
+
+Requirements:
+- Vim 8.2 or later, or Neovim 0.8 or later.
+- Optional: `curl` and |+job| (Vim) or |jobstart()| (Neovim) for titles.
+- Optional: fzf with its Vim plugin (`plugin/fzf.vim`) for
+  |:WebmarksSearch|.
+- A browser command: `open` (macOS), `wslview`, `xdg-open` or
+  `rundll32` (Windows), or |g:webmarks_browser_cmd|.
+
+==============================================================================
+2. Quick start						*webmarks-quickstart*
+
+>
+	:WebmarksAdd https://vimhelp.org/
+	:WebmarksAdd https://neovim.io/doc/  Neovim docs
+	:Webmarks
+<
+In the tree: <CR> opens, `a` adds, `A` adds a folder, `m` moves, `g?`
+lists all keys, `q` closes.
+
+Suggested mappings (point them at the commands, so they also work while
+the plugin is lazily loaded): >
+	nnoremap <silent> <Leader>bb :<C-u>WebmarksToggle<CR>
+	nnoremap <silent> <Leader>bs :<C-u>WebmarksSearch<CR>
+	nnoremap <silent> <Leader>ba :<C-u>WebmarksAdd<CR>
+<
+==============================================================================
+3. Commands						*webmarks-commands*
+
+:Webmarks						*:Webmarks*
+	Open the tree (|g:webmarks_open|), or go to its window if it is
+	already shown (also in another tab page). The data file is read
+	again. When it cannot be read, an error is shown and the tree is
+	not opened.
+
+:WebmarksToggle						*:WebmarksToggle*
+	Close the tree window of the current tab page, or open the tree.
+
+:WebmarksAdd [url] [name...]				*:WebmarksAdd*
+	Add a bookmark to the root.
+	- `:WebmarksAdd https://example.com/` fetches the page title.
+	- `:WebmarksAdd https://example.com/ My name` uses the name.
+	- `:WebmarksAdd My name` asks for the URL.
+	- `:WebmarksAdd` asks for the URL (the URL under the cursor is the
+	  default) and then for a name (empty = fetch the title).
+	An already registered URL is refused; the message names it and its
+	folder, and an open tree moves its cursor to it.
+	Cancel a prompt with CTRL-C (<Esc> also cancels on Neovim; in Vim an
+	empty URL cancels).
+
+:WebmarksSearch						*:WebmarksSearch*
+	Pick a bookmark with fzf and open it. The candidates keep the order
+	of the open tree (or of the defaults); fzf does not re-sort them.
+	Needs fzf's `plugin/fzf.vim` to be loaded.
+
+:WebmarksEdit						*:WebmarksEdit*
+	Open the tree and start |webmarks-edit|.
+
+==============================================================================
+4. The tree buffer					*webmarks-tree*
+
+The buffer `webmarks://tree` (filetype `webmarks`) shows bookmarks of the
+root first, then each folder (by name) with its sub-folders and its
+bookmarks: >
+	★ Vim help
+	  Neovim docs
+	Dev/
+	  Docs/
+	      MDN
+	    GitHub
+<
+`★` marks a favorite. A name shown in the Comment color is still the URL
+(the title is not known yet); ` …` means a title is being fetched.
+Folders are Vim folds: `za`, `zc`, `zM`, `zR` and friends work as usual.
+In the flat view (`T`) all bookmarks are listed with their folder path.
+
+						*webmarks-keys*
+Key	Action ~
+<CR>	open the bookmark in the browser; on a folder toggle its fold;
+	on the empty line add a bookmark
+a	add a bookmark into the folder under the cursor
+A	add a folder (into the folder under the cursor)
+r	rename the bookmark or folder
+e	change the URL (its usage stats are kept)
+m	move to another folder (choose from a list)
+d	delete (asks first; a folder must be empty)
+*	toggle favorite
+t	fetch the title again (also replaces a name you typed)
+y	yank the URL into |quotequote| (and |quoteplus| if available)
+S	sort by most recently opened
+~	sort by name
+F	sort by frecency (|webmarks-frecency|)
+P	toggle "favorites first"
+T	toggle tree / flat view
+s	|:WebmarksSearch|
+R	read the data file again
+i	|webmarks-edit|
+q	close the window (in edit mode: leave edit mode)
+g?	list the keys
+
+						*webmarks-mappings*
+Every action is a <Plug> mapping: `<Plug>(webmarks-open)`,
+`<Plug>(webmarks-add)`, `<Plug>(webmarks-add-folder)`,
+`<Plug>(webmarks-rename)`, `<Plug>(webmarks-edit-url)`,
+`<Plug>(webmarks-move)`, `<Plug>(webmarks-delete)`,
+`<Plug>(webmarks-favorite)`, `<Plug>(webmarks-refetch)`,
+`<Plug>(webmarks-yank)`, `<Plug>(webmarks-sort-recent)`,
+`<Plug>(webmarks-sort-name)`, `<Plug>(webmarks-sort-frecency)`,
+`<Plug>(webmarks-toggle-favorite-first)`, `<Plug>(webmarks-toggle-view)`,
+`<Plug>(webmarks-search)`, `<Plug>(webmarks-reload)`,
+`<Plug>(webmarks-edit)`, `<Plug>(webmarks-close)`, `<Plug>(webmarks-help)`.
+
+A default key is not mapped when you already mapped its <Plug> mapping in
+the buffer. Map your own keys from a FileType autocommand: >
+	augroup my_webmarks
+	  autocmd!
+	  autocmd FileType webmarks nmap <buffer> o <Plug>(webmarks-open)
+	augroup END
+<
+Set |g:webmarks_no_default_mappings| to map nothing yourself.
+
+						*webmarks-overridden-keys*
+The tree is a read-only list, so some keys lose their usual meaning
+there: `e` (word motion), `m` (set mark), `*` (search word), `t` (till),
+`S`, `F`, `T`, `P`, `s`, `R`, `a`, `A`, `r`, `d`, `y`, `i`, `q` (record).
+`?`, `/`, `n` and the fold commands are left alone.
+
+Deleting a folder is refused while it holds bookmarks or folders. The
+folder depth is limited to two levels.
+
+==============================================================================
+5. Edit mode						*webmarks-edit*
+
+`i` (or |:WebmarksEdit|) turns the tree into editable text; |:w| applies
+all changes at once. In edit mode every line carries a hidden id marker
+(` ⟨b12⟩`, concealed) and bookmark lines also show their URL: >
+	★ Vim help  https://vimhelp.org/
+	  https://example.com/
+	Dev/
+	  Docs/
+	      MDN  https://developer.mozilla.org/
+	    GitHub  https://github.com/
+<
+Edit with any Vim command:
+- rename: change the text before the URL;
+- reset to the page title: delete the name (keep the URL);
+- favorite: put `★ ` (or `* `) in the 2-column star slot, or two spaces;
+- move: change the indent or move the line under another folder;
+- add: write a new line `  name  https://...`, `  https://...` (title is
+  fetched) or `Name/` (a folder);
+- delete: delete the line (|:w| asks once for all deletions);
+- `#` lines and empty lines are ignored.
+
+Indent: a folder line at depth d starts with 2(d-1) spaces, a bookmark in
+it with 2d spaces followed by the 2-column star slot. Use spaces, not
+tabs ('expandtab' and 'shiftwidth' 2 are set, so |>>| and |<<| work).
+
+|:w|	parse and apply. On an error nothing is saved: the errors (up to 10,
+	with line numbers) are listed, the cursor goes to the first one and
+	the buffer stays in edit mode. On success the tree goes back to the
+	view mode.
+|:e!|	discard the edits and go back to the view mode.
+q	leave edit mode if nothing was changed; otherwise warn.
+
+Mappings: the default keys are removed while editing (except `q`) and
+come back afterwards. Your own FileType mappings stay; check
+`b:webmarks.mode` (`'view'` or `'edit'`) in them if needed.
+
+Closing the window with |:q| keeps the edits (the buffer is hidden);
+|:Webmarks| shows them again.
+
+Edit mode needs the tree view; it is not available in the flat view.
+
+==============================================================================
+6. Options						*webmarks-options*
+
+An invalid value is reported once and the default is used.
+
+*g:webmarks_file*
+	Path of the data file. `~` is expanded; `%` and `#` are literal.
+	Default: `$XDG_DATA_HOME/webmarks/bookmarks.json`, or
+	`~/.local/share/webmarks/bookmarks.json` when $XDG_DATA_HOME is
+	empty.
+
+*g:webmarks_open*		(default: `'vsplit'`)
+	How |:Webmarks| shows the tree: `'vsplit'` (left), `'split'` (top),
+	`'edit'` (current window) or `'tab'`.
+
+*g:webmarks_width*		(default: `40`)
+	Width of a new `'vsplit'` window.
+
+*g:webmarks_default_sort*	(default: `'frecency'`)
+	`'frecency'`, `'recent'` or `'name'`. `S`, `~`, `F` change it for the
+	tree buffer only; it is not saved.
+
+*g:webmarks_favorite_first*	(default: `1`)
+	List favorites before the others. `P` toggles it in the tree.
+
+*g:webmarks_default_view*	(default: `'tree'`)
+	`'tree'` or `'flat'`.
+
+*g:webmarks_browser_cmd*	(default: detected)
+	The command that opens a URL; the URL is appended as the last
+	argument. A List is the command and its arguments; a String is only
+	the executable name (no arguments): >
+	let g:webmarks_browser_cmd = ['firefox', '--new-tab']
+	let g:webmarks_browser_cmd = 'chromium'
+<	Detected in this order: `open` on macOS, `wslview`, `xdg-open`,
+	`rundll32 url.dll,FileProtocolHandler` on Windows. The command is run
+	without a shell (on Vim 8.2 to 9.1, where |system()| cannot take a
+	List, the arguments are |shellescape()|d).
+
+*g:webmarks_fetch_title*	(default: `1`)
+	Fetch the page title when a bookmark is added without a name. `0`
+	turns off every automatic network access (|webmarks-privacy|); `t`
+	still fetches on request.
+
+*g:webmarks_no_default_mappings*	(default: `0`)
+	`1`: do not map the default keys in the tree buffer.
+
+==============================================================================
+7. Functions						*webmarks-functions*
+
+webmarks#open()						*webmarks#open()*
+	Same as |:Webmarks|. Returns a result dict ({ok, code, error}).
+
+webmarks#toggle()					*webmarks#toggle()*
+	Same as |:WebmarksToggle|.
+
+webmarks#add({url}, {name}, {folder_id})		*webmarks#add()*
+	Add a bookmark. An empty {name} fetches the title. {folder_id} is a
+	folder id such as `'f3'` or |v:null| for the root. Returns a dict
+	with `ok`, `code`, `error` and, on success, `id`.
+
+webmarks#add_command({args})			*webmarks#add_command()*
+	What |:WebmarksAdd| runs with its arguments.
+
+webmarks#search()					*webmarks#search()*
+	Same as |:WebmarksSearch|.
+
+webmarks#edit()						*webmarks#edit()*
+	Same as |:WebmarksEdit|.
+
+webmarks#reload()					*webmarks#reload()*
+	Read the data file again and redraw an open tree.
+
+==============================================================================
+8. Ordering and frecency				*webmarks-frecency*
+
+Opening a bookmark (<CR> or fzf) records the launch only when the browser
+command succeeded: the rank grows by 1, the open count by 1 and the
+launch time is set. The score is the one of rupa/z: >
+	score = 10000 * rank * 3.75 / ((0.0001 * age_in_seconds + 1) + 0.25)
+<A bookmark never opened scores 0. When the ranks of all bookmarks add up
+to more than 9000, every rank is multiplied by 0.99 (bookmarks are never
+removed by this). Ties are broken by name, then by id.
+
+Folders are always listed by name; sorting applies inside each folder in
+the tree view and to the whole list in the flat view and in fzf.
+
+==============================================================================
+9. Titles						*webmarks-titles*
+
+A bookmark added without a name shows its URL until the title arrives.
+The title is fetched in the background with `curl` (never blocking Vim)
+and is used only if, by then, the bookmark still exists, has the same URL
+and still has no name of yours. A name you typed is never replaced
+automatically; `t` replaces it on request.
+
+The title is taken from `<title>` (inside `<head>` when there is one),
+entities are decoded and whitespace is squeezed. Only UTF-8 pages are
+supported: a page in another encoding keeps the URL as its name.
+
+Without `curl` or job support, titles are not fetched (`t` says so).
+
+==============================================================================
+10. The data file					*webmarks-file*
+
+One JSON file (|g:webmarks_file|), readable and diff-friendly: one line
+per folder and per bookmark. It is created on the first change with
+permission 600 (URLs can contain secrets). Every change re-reads the file
+first, writes a temporary file and renames it over the old one, so
+several Vims can share the file (see |webmarks-limitations|).
+
+A file that cannot be parsed, has a wrong structure or a newer
+`schema_version` is refused and never overwritten: fix it by hand (the
+error tells what and where) and press `R`. Two bookmarks with the same
+URL or a too small `next_id` only produce a warning.
+
+URLs must be `http://` or `https://` and use only the characters of
+RFC 3986 (ASCII letters, digits and `-._~:/?#[]@!$&'()*+,;=%`). Write a
+non-ASCII address percent-encoded, for example
+`https://ja.wikipedia.org/wiki/%E6%97%A5%E6%9C%AC`.
+
+==============================================================================
+11. Privacy						*webmarks-privacy*
+
+webmarks talks to the network only to fetch titles:
+
+- What: an HTTP(S) GET of the bookmarked URL, with the user agent
+  `Mozilla/5.0 (compatible; vim-webmarks/1.0)`. No cookies, no other
+  data. Redirects are followed (at most 5, http/https only); at most
+  1 MiB is read; the request gives up after 10 seconds.
+- When: right after you add a bookmark without a name (|:WebmarksAdd|,
+  `a`, a new line in |webmarks-edit|, a URL changed while the name is
+  still the URL), and when you press `t`.
+- Where: to the host of that URL only.
+
+This is on by default, unlike the usual "network is opt-in" rule, because
+the plugin is meant for personal use and a name is what makes the list
+readable. Turn it off with: >
+	let g:webmarks_fetch_title = 0
+<Opening a bookmark runs your browser command with the URL; nothing else
+is sent anywhere.
+
+==============================================================================
+12. Highlights						*webmarks-highlights*
+
+Group			Default link	Used for ~
+WebmarksFolder		Directory	folder lines
+WebmarksFavorite	Special		the ★ mark
+WebmarksPending		Comment		names that are still the URL, titles
+					being fetched
+WebmarksPath		Comment		the folder path in the flat view
+WebmarksEmpty		Comment		the "no bookmarks" line
+
+The groups are linked with |:hi-default|, so your colorscheme or a
+`highlight` command after it wins.
+
+==============================================================================
+13. Limitations						*webmarks-limitations*
+
+- Changes from several Vims are safe except when two of them write the
+  file within the same second (the check uses the file time, which has
+  one-second resolution).
+- Opening and recording are two steps: when the record cannot be saved,
+  the page is open but the launch is not counted (you get a warning).
+- `xdg-open` may, on some desktops, not return until the browser exits;
+  Vim waits for it. Set |g:webmarks_browser_cmd| to a command that
+  returns at once if this happens.
+- Windows is best effort: the atomic rename, `rundll32` and the default
+  path `~/.local/share/webmarks` (not %APPDATA%) are not tested.
+- Titles of non-UTF-8 pages are not converted (the URL stays the name).
+- Edit mode: what the lines say wins when you |:w|; a bookmark another
+  Vim changed meanwhile is overwritten, one it added is kept, one it
+  deleted is added again (with a warning). A name that starts with `★ `
+  or `* ` is read as a favorite; a new line ending in `/` without a URL
+  is a folder; a name cannot end with a word that looks like a URL.
+  |:wq|, |:x| and |:update| go through the same apply; an unchanged
+  buffer is not written, so |:x| just closes the window.
+- Lazy loading: with vim-plug's `on:` option, `<Plug>` mappings and
+  |webmarks#open()| are not available before the first command; map
+  keys to the commands instead.
+- fzf: |:WebmarksSearch| needs fzf's `plugin/fzf.vim` to be loaded
+  already (not lazily).
+
+==============================================================================
+14. Testing hooks					*webmarks-testing*
+
+*g:webmarks_test* is for the test suite and should not be set in normal
+use. It is a Dictionary with optional keys:
+	`now`		a Number used as the current time
+	`cmd_runner`	Funcref(argv, opts) returning {exit_code, stdout};
+			replaces running external commands
+	`title_fetcher`	Funcref(url, ctx) returning {ok, title}; replaces
+			the HTTP request
+	`prompt`	{text, choose_folder, confirm} Funcrefs replacing the
+			interactive prompts
+
+Run the tests with `make test` (Vim and Neovim) and `make lint`.
+
+ vim:tw=78:ts=8:noet:ft=help:norl:
