@@ -231,8 +231,15 @@ endfunction
 
 " load(path) -> Result {data, mtime, warnings, fresh}
 function! webmarks#storage#json#load(path) abort
-  if !filereadable(a:path)
+  " "new" means the file does not exist at all; one that exists but cannot
+  " be read (permissions, a directory, a dead mount) must never be treated
+  " as empty, or the next save would replace it
+  if getftype(a:path) ==# ''
     return s:ok({'data': webmarks#storage#json#empty(), 'mtime': -1, 'warnings': [], 'fresh': v:true})
+  endif
+  if !filereadable(a:path)
+    return s:err('load_failed', 'cannot read ' . s:name(a:path) . ': '
+          \ . (isdirectory(a:path) ? 'it is a directory' : 'permission denied'))
   endif
   let l:mtime = getftime(a:path)
   try
@@ -281,7 +288,7 @@ function! webmarks#storage#json#save(path, data, expected_mtime) abort
   if !l:enc.ok
     return l:enc
   endif
-  if filereadable(a:path) && (a:expected_mtime == -1 || getftime(a:path) != a:expected_mtime)
+  if getftype(a:path) !=# '' && (a:expected_mtime == -1 || getftime(a:path) != a:expected_mtime)
     return s:err('conflict', l:file . ' was changed by another process; press R and retry')
   endif
   let l:tmp = a:path . '.tmp.' . getpid()

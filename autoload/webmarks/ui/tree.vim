@@ -38,6 +38,11 @@ let s:actions = [
       \ ]
 " kept mapped in edit mode
 let s:edit_actions = ['close', 'help']
+" always plain one-key: open, close and help in a read-only list (no
+" <Leader> even when a mapping such as `qf` starts with the key)
+let s:always_plain = ['open', 'close', 'help']
+" more default keys for an action: the old help key
+let s:extra_keys = [['help', 'g?']]
 
 " --- options -------------------------------------------------------------
 
@@ -184,14 +189,23 @@ function! s:map_default_keys() abort
   if webmarks#ui#tree#option('no_default_mappings')
     return
   endif
+  " decide every key before mapping any: our own maps must not count
+  let l:user = {}
+  for [l:action, l:_, l:_] in s:actions
+    if hasmapto('<Plug>(webmarks-' . l:action . ')', 'n')
+      let l:user[l:action] = 1
+    endif
+  endfor
   let l:plan = []
-  for [l:action, l:key, l:_] in s:actions
-    let l:plug = '<Plug>(webmarks-' . l:action . ')'
-    if hasmapto(l:plug, 'n')
+  for [l:action, l:key] in map(copy(s:actions), '[v:val[0], v:val[1]]') + s:extra_keys
+    if has_key(l:user, l:action)
       continue
     endif
-    " decide every key before mapping any: our own maps must not count
-    call add(l:plan, mapcheck(l:key, 'n') ==# '' ? [l:key, l:action, 1] : ['<Leader>' . l:key, l:action, 0])
+    if index(s:always_plain, l:action) >= 0 || mapcheck(l:key, 'n') ==# ''
+      call add(l:plan, [l:key, l:action, 1])
+    else
+      call add(l:plan, ['<Leader>' . l:key, l:action, 0])
+    endif
   endfor
   for l:m in l:plan
     call s:map(l:m)
@@ -916,7 +930,7 @@ endfunction
 function! s:do_help() abort
   let l:lhs = {}
   for [l:key, l:action, l:_] in b:webmarks.mappings
-    let l:lhs[l:action] = l:key
+    let l:lhs[l:action] = has_key(l:lhs, l:action) ? l:lhs[l:action] . ' ' . l:key : l:key
   endfor
   let l:editing = b:webmarks.mode ==# 'edit'
   let l:lines = [l:editing ? 'webmarks mappings (edit mode):' : 'webmarks mappings:', '']

@@ -293,3 +293,29 @@ function! s:suite.duplicate_key_in_an_ignored_field_is_refused() abort
   call s:write(l:lines)
   call s:assert.false(webmarks#storage#json#load(s:path).ok)
 endfunction
+
+function! s:suite.unreadable_file_is_never_replaced() abort
+  call webmarks#storage#json#save(s:path, s:sample(), -1)
+  let l:before = readfile(s:path)
+  call setfperm(s:path, '---------')
+  try
+    let l:l = webmarks#storage#json#load(s:path)
+    call s:assert.equals(l:l.code, 'load_failed')
+    call s:assert.match(l:l.error, 'permission denied')
+    " a writer that believes the file is new must not win either
+    call s:assert.equals(webmarks#storage#json#save(s:path, webmarks#storage#json#empty(), -1).code, 'conflict')
+    let g:webmarks_file = s:path
+    call webmarks#app#store#_reset()
+    call s:assert.equals(webmarks#app#bookmark#add('https://new.example', '', v:null, 1).code, 'load_failed')
+  finally
+    call setfperm(s:path, 'rw-------')
+  endtry
+  call s:assert.equals(readfile(s:path), l:before)
+endfunction
+
+function! s:suite.a_directory_in_place_of_the_file() abort
+  call mkdir(s:path, 'p')
+  let l:l = webmarks#storage#json#load(s:path)
+  call s:assert.equals(l:l.code, 'load_failed')
+  call s:assert.match(l:l.error, 'directory')
+endfunction

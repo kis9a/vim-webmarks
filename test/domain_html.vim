@@ -203,3 +203,22 @@ function! s:suite.test_cap_keeps_characters_whole() abort
   call s:assert.true(webmarks#domain#text#is_utf8(l:t))
   call s:assert.equals(strchars(l:t), 4096)
 endfunction
+
+" Added (review H2): broken or huge markup stays fast
+function! s:suite.test_broken_markup_is_linear() abort
+  let l:start = reltime()
+  call s:assert.equal(webmarks#domain#html#extract_title(repeat('<title x', 10000)), v:null)
+  call s:assert.true(reltimefloat(reltime(l:start)) < 0.2, reltimestr(reltime(l:start)))
+  let l:start = reltime()
+  let l:t = webmarks#domain#html#extract_title(repeat('<title>x</title>', 65536))
+  call s:assert.equal(l:t, 'x')
+  call s:assert.true(reltimefloat(reltime(l:start)) < 0.2, reltimestr(reltime(l:start)))
+  let l:start = reltime()
+  call s:assert.equal(webmarks#domain#html#extract_title(repeat('<head ', 10000) . '<title>ok</title>'), 'ok')
+  call s:assert.true(reltimefloat(reltime(l:start)) < 0.2, reltimestr(reltime(l:start)))
+endfunction
+
+function! s:suite.test_titles_tag_is_not_title() abort
+  call s:assert.equal(webmarks#domain#html#extract_title('<titles>no</titles><title>yes</title>'), 'yes')
+  call s:assert.equal(webmarks#domain#html#extract_title("<title\tlang=en>tab</title>"), 'tab')
+endfunction

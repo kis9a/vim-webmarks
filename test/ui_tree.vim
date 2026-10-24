@@ -405,6 +405,8 @@ function! s:suite.help_lists_keys() abort
   call s:assert.match(l:out, 's\s\+search with fzf')
   call s:assert.not_match(l:out, '<Leader>')
   call s:assert.equals(maparg('?', 'n'), '<Plug>(webmarks-help)')
+  call s:assert.equals(maparg('g?', 'n'), '<Plug>(webmarks-help)')
+  call s:assert.match(l:out, '? g?\s\+show this list')
   call s:assert.equals(bufname('%'), 'webmarks://webmarks')
 endfunction
 
@@ -417,7 +419,10 @@ function! s:suite.keys_that_clash_get_the_leader() abort
   try
     Webmarks
     call s:assert.equals(maparg('<Leader>s', 'n'), '<Plug>(webmarks-search)')
-    call s:assert.equals(maparg('<Leader>q', 'n'), '<Plug>(webmarks-close)')
+    " open / close / help stay one key even with `qf` around
+    call s:assert.equals(maparg('q', 'n'), '<Plug>(webmarks-close)')
+    call s:assert.true(maparg('q', 'n', 0, 1).nowait)
+    call s:assert.equals(maparg('<Leader>q', 'n'), '')
     call s:assert.equals(maparg('<Leader>d', 'n'), '<Plug>(webmarks-delete)')
     call s:assert.equals(maparg('<Leader>S', 'n'), '<Plug>(webmarks-sort-recent)')
     " the plain keys are left to the user's mappings
@@ -436,7 +441,7 @@ function! s:suite.keys_that_clash_get_the_leader() abort
     " and survive a round trip through edit mode
     normal i
     call s:assert.equals(maparg('<Leader>S', 'n'), '')
-    call s:assert.equals(maparg('<Leader>q', 'n'), '<Plug>(webmarks-close)')
+    call s:assert.equals(maparg('q', 'n'), '<Plug>(webmarks-close)')
     edit!
     call s:assert.equals(maparg('<Leader>S', 'n'), '<Plug>(webmarks-sort-recent)')
   finally
