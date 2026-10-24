@@ -14,29 +14,25 @@ let s:max_chars = 200
 " Neovim nor stable when applied twice (a name accepted once could be
 " refused when the file was read back).
 
-" -> space: C0/C1 controls, DEL, Unicode spaces, line/paragraph separator
-function! s:is_space(cp) abort
-  return a:cp < 0x20 || (a:cp >= 0x7f && a:cp <= 0x9f) || a:cp == 0xa0
-        \ || a:cp == 0x1680 || (a:cp >= 0x2000 && a:cp <= 0x200a)
-        \ || a:cp == 0x2028 || a:cp == 0x2029 || a:cp == 0x202f
-        \ || a:cp == 0x205f || a:cp == 0x3000
-endfunction
-
-" -> dropped: zero-width space, bidi marks and controls, BOM, soft hyphen,
+" code point -> 32 (becomes a space) or -1 (dropped); others are kept.
+" Spaces: C0/C1 controls, DEL, Unicode spaces, line/paragraph separators.
+" Dropped: zero-width space, bidi marks and controls, BOM, soft hyphen,
 " CGJ, Arabic letter mark, Hangul / Braille fillers, Mongolian vowel
 " separator, word joiner .. invisible plus, interlinear annotation, tag
-" characters, and the edit-mode id markers. ZWJ / ZWNJ (U+200C/D) and
+" characters and the edit-mode id markers. ZWJ / ZWNJ (U+200C/D) and
 " variation selectors stay: emoji and many scripts need them.
-function! s:is_dropped(cp) abort
-  return a:cp == 0x200b || a:cp == 0x200e || a:cp == 0x200f
-        \ || (a:cp >= 0x202a && a:cp <= 0x202e) || (a:cp >= 0x2066 && a:cp <= 0x2069)
-        \ || a:cp == 0xfeff || a:cp == 0xad || a:cp == 0x34f || a:cp == 0x61c
-        \ || a:cp == 0x115f || a:cp == 0x1160 || a:cp == 0x180e
-        \ || (a:cp >= 0x2060 && a:cp <= 0x2064) || a:cp == 0x2800 || a:cp == 0x3164
-        \ || a:cp == 0xffa0 || (a:cp >= 0xfff9 && a:cp <= 0xfffb)
-        \ || (a:cp >= 0xe0000 && a:cp <= 0xe007f)
-        \ || a:cp == 0x27e8 || a:cp == 0x27e9
-endfunction
+let s:map = {}
+for s:cp in range(0x00, 0x1f) + range(0x7f, 0xa0) + [0x1680] + range(0x2000, 0x200a)
+      \ + [0x2028, 0x2029, 0x202f, 0x205f, 0x3000]
+  let s:map[s:cp] = 32
+endfor
+for s:cp in [0x200b, 0x200e, 0x200f, 0xfeff, 0xad, 0x34f, 0x61c, 0x115f, 0x1160, 0x180e,
+      \ 0x2800, 0x3164, 0xffa0, 0x27e8, 0x27e9]
+      \ + range(0x202a, 0x202e) + range(0x2066, 0x2069) + range(0x2060, 0x2064)
+      \ + range(0xfff9, 0xfffb) + range(0xe0000, 0xe007f)
+  let s:map[s:cp] = -1
+endfor
+unlet s:cp
 
 " zero-width on their own: combining marks, joiners, variation selectors
 function! s:is_zero_width(cp) abort
@@ -53,9 +49,14 @@ endfunction
 " sanitize(s) -> Result {value}
 "   invalid_text: not valid UTF-8 / not a String
 "   empty_name:   nothing visible left after cleaning
-" Stable: sanitize(sanitize(s).value) gives the same value, on both editors.
+" Non-ASCII text is cleaned as a list of code points: the editors disagree
+" on which characters are "composing" (and regex, trim() and substitute()
+" treat a base character and its composing marks as one), so text-level
+" cleaning was neither the same in Vim and Neovim nor stable when applied
+" twice. On code points, sanitize(sanitize(s).value) == sanitize(s).value
+" in both editors.
 function! webmarks#domain#text#sanitize(s) abort
-  if type(a:s) != v:t_string || !webmarks#domain#text#is_utf8(a:s)
+  if type(a:s) != v:t_string
     return s:err('invalid_text', 'text contains invalid UTF-8')
   endif
   if a:s !~# '[^\x01-\x7f]' && strlen(a:s) == strchars(a:s)
@@ -68,58 +69,53 @@ function! webmarks#domain#text#sanitize(s) abort
       return s:empty()
     endif
     return {'ok': v:true, 'code': '', 'error': '', 'changed': v:true, 'value': l:v}
-  else
-    let l:cps = []
-    for l:cp in str2list(a:s)
-      if s:is_space(l:cp)
-        call add(l:cps, 0x20)
-      elseif !s:is_dropped(l:cp)
-        call add(l:cps, l:cp)
-      endif
-    endfor
   endif
-  let l:v = trim(substitute(list2str(l:cps), ' \+', ' ', 'g'), ' ')
-  let l:cps = str2list(l:v)
+  let l:cps = s:code_points(a:s)
+  if l:cps is v:null
+    return s:err('invalid_text', 'text contains invalid UTF-8')
+  endif
+  call filter(map(l:cps, 'get(s:map, v:val, v:val)'), 'v:val >= 0')
+  " collapse and trim spaces on the decimal text (plain ASCII, so the regex
+  " sees exactly one item per code point)
+  let l:text = substitute(',' . join(l:cps, ',') . ',', ',32\%(,32\)\+,', ',32,', 'g')
+  let l:text = substitute(l:text, '^,32,', ',', '')
+  let l:text = substitute(l:text, ',32,$', ',', '')
+  let l:cps = map(split(l:text, ','), 'str2nr(v:val)')
   if len(l:cps) > s:max_chars
     let l:cps = l:cps[: s:max_chars - 1]
-    let l:v = trim(list2str(l:cps), ' ')
-    let l:cps = str2list(l:v)
+    while !empty(l:cps) && l:cps[-1] == 32
+      call remove(l:cps, -1)
+    endwhile
   endif
-  if l:v ==# '' || empty(filter(copy(l:cps), '!s:is_zero_width(v:val)'))
+  " nothing visible: only zero-width code points (checked lazily: almost
+  " every name starts with a visible one)
+  if empty(l:cps) || (s:is_zero_width(l:cps[0])
+        \ && empty(filter(copy(l:cps), '!s:is_zero_width(v:val)')))
     return s:empty()
   endif
-  return {'ok': v:true, 'code': '', 'error': '', 'changed': v:true, 'value': l:v}
+  return {'ok': v:true, 'code': '', 'error': '', 'changed': v:true, 'value': list2str(l:cps)}
 endfunction
 
-" is_utf8(s) -> Bool: true when s has no invalid byte sequences.
-" This runs before any substitute(): the regex engine reads a stray byte
-" such as 0x82 as U+0082, so a C1 pattern would silently "fix" it. Both
-" editors split an invalid sequence into 1-byte items >= 0x80, which a
-" valid character never is.
+" is_utf8(s) -> Bool: valid UTF-8 that both editors read back the same.
 function! webmarks#domain#text#is_utf8(s) abort
-  if type(a:s) != v:t_string
-    return v:false
-  endif
-  " pure ASCII. Both checks: Neovim's regex skips a composing character,
-  " and strchars() counts a stray byte as one character.
-  if a:s !~# '[^\x01-\x7f]' && strlen(a:s) == strchars(a:s)
-    return v:true
-  endif
-  for l:c in split(a:s, '\zs')
-    if strlen(l:c) == 1 && char2nr(l:c) >= 128
-      return v:false
-    endif
-  endfor
-  " encoded surrogates and code points above U+10FFFF: Vim reads them as one
-  " character, Neovim's json_encode()/json_decode() reject them. Checked on
-  " code points, as Neovim may attach a code point to the previous character.
+  return type(a:s) == v:t_string && s:code_points(a:s) isnot v:null
+endfunction
+
+" The code points of {s}, or v:null when {s} is not valid UTF-8:
+" - a stray byte (str2list() gives its value, e.g. 0x82) and an over-long
+"   form (0xe0 0x80 0xaf for '/') do not encode back to the same bytes;
+" - an encoded surrogate or a value above U+10FFFF encodes back unchanged
+"   in Vim, but Neovim's json_encode()/json_decode() reject it.
+" (Not regex-based: the regex engine reads a stray 0x82 as U+0082.)
+function! s:code_points(s) abort
   let l:cps = str2list(a:s)
-  if !empty(filter(copy(l:cps), '(v:val >= 0xd800 && v:val <= 0xdfff) || v:val > 0x10ffff'))
-    return v:false
+  if list2str(l:cps) !=# a:s
+    return v:null
   endif
-  " over-long encodings (e.g. 0xe0 0x80 0xaf for '/'): encoding the code
-  " points again gives the shortest form, so the bytes differ
-  return list2str(l:cps) ==# a:s ? v:true : v:false
+  if !empty(filter(copy(l:cps), '(v:val >= 0xd800 && v:val <= 0xdfff) || v:val > 0x10ffff'))
+    return v:null
+  endif
+  return l:cps
 endfunction
 
 function! s:err(code, msg) abort

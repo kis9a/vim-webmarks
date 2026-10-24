@@ -199,7 +199,9 @@ function! s:decode_root(root, file) abort
 endfunction
 
 function! s:has_special(v, depth) abort
-  if a:depth > 4
+  " deep enough for any JSON a person writes; bounded so a pathological
+  " file cannot exhaust 'maxfuncdepth'
+  if a:depth > 40
     return 0
   endif
   if type(a:v) == v:t_dict

@@ -102,3 +102,12 @@ function! s:suite.joiners_and_selectors_in_words_are_kept() abort
   call s:assert.equals(s:san(list2str([0x200b, 0xfe0f])).code, 'empty_name')
   call s:assert.equals(s:san(list2str([0xe0041, 0xfe0f])).code, 'empty_name')
 endfunction
+
+function! s:suite.spaces_next_to_composing_marks() abort
+  " trim() and substitute() see a space plus a composing mark as one
+  " character (Neovim) or two (Vim); code points give one answer
+  call s:assert.equals(str2list(s:san(list2str([0x61, 0x20, 0x200d])).value), [0x61, 0x20, 0x200d])
+  call s:assert.equals(str2list(s:san(list2str([0x61, 0x20, 0x20, 0x301, 0x62])).value), [0x61, 0x20, 0x301, 0x62])
+  call s:assert.equals(str2list(s:san(list2str([0xfe0f, 0xa0, 0x200d])).value), [0xfe0f, 0x20, 0x200d])
+  call s:assert.equals(s:san(list2str([0x20, 0x200b, 0x3000])).code, 'empty_name')
+endfunction
