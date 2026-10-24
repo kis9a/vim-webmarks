@@ -111,3 +111,10 @@ function! s:suite.spaces_next_to_composing_marks() abort
   call s:assert.equals(str2list(s:san(list2str([0xfe0f, 0xa0, 0x200d])).value), [0xfe0f, 0x20, 0x200d])
   call s:assert.equals(s:san(list2str([0x20, 0x200b, 0x3000])).code, 'empty_name')
 endfunction
+
+function! s:suite.zero_width_runs_are_capped() abort
+  let l:zalgo = list2str([0x61] + repeat([0x301], 30) + [0x62])
+  call s:assert.equals(str2list(s:san(l:zalgo).value), [0x61] + repeat([0x301], 4) + [0x62])
+  let l:ok = list2str([0x1f468, 0x200d, 0x1f469, 0x200d, 0x1f467, 0x200d, 0x1f466])
+  call s:assert.equals(s:san(l:ok).value, l:ok)
+endfunction

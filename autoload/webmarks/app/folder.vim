@@ -86,6 +86,16 @@ function! webmarks#app#folder#remove(id) abort
   return webmarks#app#store#mutate(function('s:remove_fn', [a:id]))
 endfunction
 
+" check_remove(id) -> Result: could the folder be removed now? (asked before
+" the confirmation prompt; remove() checks again against fresh data)
+function! webmarks#app#folder#check_remove(id) abort
+  let l:data = webmarks#app#store#current()
+  if webmarks#app#store#find_folder(l:data, a:id) is v:null
+    return s:not_found(a:id)
+  endif
+  return webmarks#domain#folder#can_delete(l:data.folders, l:data.bookmarks, a:id)
+endfunction
+
 " choices(data, exclude_id) -> [{id, path}] in tree order: where something
 " can be moved to. exclude_id (a folder being moved) and its descendants
 " are left out.

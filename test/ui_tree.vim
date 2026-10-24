@@ -297,8 +297,13 @@ function! s:suite.delete_folder_not_empty() abort
   call s:seed()
   Webmarks
   call cursor(s:lnum('f3'), 1)
+  let s:asked_confirm = 0
+  let g:webmarks_test.prompt.confirm = function('s:count_confirm')
   call s:press('d')
   call s:assert.match(execute('messages'), 'folder is not empty: Dev')
+  " refused before asking
+  call s:assert.equals(s:asked_confirm, 0)
+  let g:webmarks_test.prompt.confirm = function('s:confirm')
   call s:assert.true(s:lnum('f3') > 0)
   call cursor(s:lnum('b1'), 1)
   let s:confirm = 0
@@ -516,4 +521,9 @@ endfunction
 function! s:record_default(prompt, default) abort
   call add(s:defaults, a:default)
   return {'ok': v:false, 'code': 'cancelled', 'error': ''}
+endfunction
+
+function! s:count_confirm(msg) abort
+  let s:asked_confirm += 1
+  return 1
 endfunction

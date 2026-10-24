@@ -235,3 +235,9 @@ function! s:suite.bad_argument_and_completion() abort
   WebmarksEdit edit
   call s:assert.equals([b:webmarks.mode, winnr('$')], ['edit', 1])
 endfunction
+
+function! s:suite.any_scheme_first_is_a_url() abort
+  let l:r = webmarks#add_command('ftp://bad.example name')
+  call s:assert.equals(l:r.code, 'invalid_url')
+  call s:assert.equals(s:asked, [])
+endfunction

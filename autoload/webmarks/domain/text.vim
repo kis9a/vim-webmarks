@@ -42,6 +42,33 @@ function! s:is_zero_width(cp) abort
         \ || a:cp == 0x200c || a:cp == 0x200d || (a:cp >= 0xe0100 && a:cp <= 0xe01ef)
 endfunction
 
+" the code points of s:is_zero_width(), as a table: filter() with a short
+" has_key() is much cheaper than the range test per code point
+let s:zw = {}
+for s:cp in range(0x300, 0x36f) + range(0x1ab0, 0x1aff) + range(0x1dc0, 0x1dff)
+      \ + range(0x20d0, 0x20ff) + range(0xfe00, 0xfe0f) + range(0xfe20, 0xfe2f)
+      \ + [0x200c, 0x200d] + range(0xe0100, 0xe01ef)
+  let s:zw[s:cp] = 1
+endfor
+unlet s:cp
+
+function! s:cap_zero_width(cps) abort
+  let l:out = []
+  let l:run = 0
+  for l:cp in a:cps
+    if s:is_zero_width(l:cp)
+      let l:run += 1
+      if l:run > 4
+        continue
+      endif
+    else
+      let l:run = 0
+    endif
+    call add(l:out, l:cp)
+  endfor
+  return l:out
+endfunction
+
 function! s:empty() abort
   return s:err('empty_name', 'name is empty after removing control characters')
 endfunction
@@ -57,7 +84,7 @@ endfunction
 " in both editors.
 function! webmarks#domain#text#sanitize(s) abort
   if type(a:s) != v:t_string
-    return s:err('invalid_text', 'text contains invalid UTF-8')
+    return s:err('invalid_text', 'name must be text')
   endif
   if a:s !~# '[^\x01-\x7f]' && strlen(a:s) == strchars(a:s)
     " ASCII (most names): controls and DEL become spaces; bytes = chars
@@ -81,6 +108,11 @@ function! webmarks#domain#text#sanitize(s) abort
   let l:text = substitute(l:text, '^,32,', ',', '')
   let l:text = substitute(l:text, ',32,$', ',', '')
   let l:cps = map(split(l:text, ','), 'str2nr(v:val)')
+  " at most 4 zero-width code points after one base character ("zalgo"
+  " names would otherwise pile up in one cell)
+  if len(filter(copy(l:cps), 'has_key(s:zw, v:val)')) > 4
+    let l:cps = s:cap_zero_width(l:cps)
+  endif
   if len(l:cps) > s:max_chars
     let l:cps = l:cps[: s:max_chars - 1]
     while !empty(l:cps) && l:cps[-1] == 32

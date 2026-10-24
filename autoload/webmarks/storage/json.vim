@@ -46,6 +46,22 @@ function! s:by_id(a, b) abort
   return l:x == l:y ? 0 : l:x < l:y ? -1 : 1
 endfunction
 
+" A Float as a JSON number that reads back as a Float: '3.0', '0.5',
+" '4.0e-05', '1.0e+300'. ('%.4f' turned 0.00004 into 0 and 1e300 into 300
+" digits; Vim's printf('%g') keeps trailing zeros.)
+function! s:number(f) abort
+  if a:f == 0.0
+    return '0.0'
+  endif
+  if a:f >= 0.0001 && a:f < 1.0e15
+    let l:s = substitute(printf('%.10f', a:f), '0\+$', '', '')
+    return l:s =~# '\.$' ? l:s . '0' : l:s
+  endif
+  " 4.0000000000e-05 -> 4.0e-05
+  let [l:mant, l:exp] = matchlist(printf('%.10e', a:f), '^\(\d\.\d\{-}\)0*e\(.*\)$')[1:2]
+  return (l:mant =~# '\.$' ? l:mant . '0' : l:mant) . 'e' . l:exp
+endfunction
+
 function! s:encode_folder(f) abort
   return printf('{"id": %s, "name": %s, "parent_id": %s}',
         \ s:str(a:f.id), s:str(a:f.name), s:nullable(a:f.parent_id))
@@ -58,7 +74,7 @@ function! s:encode_bookmark(b) abort
         \ . '"usage": {"rank": %s, "open_count": %d, "last_launch_at": %s}}',
         \ s:str(a:b.id), s:str(a:b.url), s:str(a:b.display_name), s:str(a:b.name_source),
         \ s:nullable(a:b.folder_id), a:b.is_favorite ? 'true' : 'false', a:b.created_at,
-        \ printf('%.4f', l:u.rank * 1.0), l:u.open_count,
+        \ s:number(l:u.rank * 1.0), l:u.open_count,
         \ l:u.last_launch_at is v:null ? 'null' : printf('%d', l:u.last_launch_at))
 endfunction
 

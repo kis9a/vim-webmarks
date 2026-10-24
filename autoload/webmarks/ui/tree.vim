@@ -115,7 +115,8 @@ function! s:ensure_buffer() abort
     return l:buf
   endif
   let l:buf = exists('*bufadd') ? bufadd(s:name) : bufnr(s:name, 1)
-  call bufload(l:buf)
+  " silent: Vim reports a new 'DIRECTORY' for the URL-like name
+  silent call bufload(l:buf)
   " before any window shows it: no swapfile, never written to disk
   call setbufvar(l:buf, '&buftype', 'acwrite')
   call setbufvar(l:buf, '&bufhidden', 'hide')
@@ -826,6 +827,13 @@ function! s:do_delete() abort
     return
   endif
   let l:name = l:row.kind ==# 'folder' ? l:row.folder.name : l:row.bookmark.display_name
+  " refuse before asking: a folder that is not empty cannot be deleted
+  if l:row.kind ==# 'folder'
+    let l:c = webmarks#app#folder#check_remove(l:row.id)
+    if !s:report(l:c)
+      return
+    endif
+  endif
   if !webmarks#ui#prompt#confirm(printf('Delete "%s"?', l:name))
     return
   endif
@@ -963,19 +971,20 @@ endfunction
 
 function! webmarks#ui#tree#enter_edit() abort
   if !exists('b:webmarks')
-    return
+    return {'ok': v:false, 'code': 'edit_unavailable', 'error': 'not in the webmarks buffer', 'changed': v:false}
   endif
   if b:webmarks.view !=# 'tree'
-    call webmarks#compat#notify#warn('edit mode is available in tree view only')
-    return
+    let l:msg = 'edit mode is available in tree view only'
+    call webmarks#compat#notify#warn(l:msg)
+    return {'ok': v:false, 'code': 'edit_unavailable', 'error': l:msg, 'changed': v:false}
   endif
   if b:webmarks.mode ==# 'edit'
-    return
+    return s:ok()
   endif
   let l:r = webmarks#app#store#reload()
   if !l:r.ok
     call webmarks#compat#notify#error(l:r.error)
-    return
+    return l:r
   endif
   let l:buf = bufnr('%')
   call s:render_buffer(l:buf)
@@ -1000,6 +1009,7 @@ function! webmarks#ui#tree#enter_edit() abort
   " setline() sets 'modified' even for identical text
   setlocal nomodified
   echo '-- WEBMARKS EDIT -- :w to apply, :e! to discard'
+  return s:ok()
 endfunction
 
 " Edit-mode window settings for the current window.
@@ -1065,6 +1075,8 @@ function! webmarks#ui#tree#_edit_write() abort
     call webmarks#app#title#request(l:f.id, l:f.url, 0, webmarks#ui#tree#option('fetch_title'))
   endfor
   call webmarks#ui#tree#leave_edit()
+  " after a confirm() prompt: clear it, so the summary needs no hit-enter
+  redraw
   call webmarks#compat#notify#info(s:summary(get(l:r, 'counts', {})))
 endfunction
 

@@ -87,7 +87,8 @@ endfunction
 function! webmarks#add_command(qargs) abort
   let l:args = trim(a:qargs)
   let l:first = matchstr(l:args, '^\S\+')
-  if l:first =~# '^https\?://'
+  " any scheme:// is meant as a URL (and refused if not http(s))
+  if l:first =~# '^\a[[:alnum:]+.-]*://'
     return webmarks#add(l:first, trim(matchstr(l:args, '^\S\+\s\+\zs.*')), v:null)
   endif
   let l:url = webmarks#ui#prompt#text('URL: ', matchstr(expand('<cfile>'), '^https\?://\S\+'))
@@ -122,10 +123,10 @@ endfunction
 " Open the tree and start editing it as text.
 function! webmarks#edit(...) abort
   let l:r = call('webmarks#open', a:000)
-  if l:r.ok
-    call webmarks#ui#tree#enter_edit()
+  if !l:r.ok
+    return l:r
   endif
-  return l:r
+  return webmarks#ui#tree#enter_edit()
 endfunction
 
 function! webmarks#reload() abort

@@ -64,8 +64,8 @@ function! s:suite.layout_one_element_per_line() abort
   call s:assert.equals(l:lines[0:4], ['{', '  "schema_version": 1,', '  "next_id": 6,', '  "folders": [',
         \ '    {"id": "f1", "name": "Dev", "parent_id": null},'])
   call s:assert.equals(l:lines[-4:], [
-        \ '    {"id": "b3", "url": "https://a.example", "display_name": "https://a.example", "name_source": "url", "folder_id": null, "is_favorite": false, "created_at": 1700000000, "usage": {"rank": 0.5000, "open_count": 0, "last_launch_at": null}},',
-        \ '    {"id": "b5", "url": "https://b.example/?q=1&r=2", "display_name": "日本語 \\ back", "name_source": "manual", "folder_id": "f2", "is_favorite": true, "created_at": 1700000000, "usage": {"rank": 3.0000, "open_count": 3, "last_launch_at": 1700000100}}',
+        \ '    {"id": "b3", "url": "https://a.example", "display_name": "https://a.example", "name_source": "url", "folder_id": null, "is_favorite": false, "created_at": 1700000000, "usage": {"rank": 0.5, "open_count": 0, "last_launch_at": null}},',
+        \ '    {"id": "b5", "url": "https://b.example/?q=1&r=2", "display_name": "日本語 \\ back", "name_source": "manual", "folder_id": "f2", "is_favorite": true, "created_at": 1700000000, "usage": {"rank": 3.0, "open_count": 3, "last_launch_at": 1700000100}}',
         \ '  ]', '}'])
   call s:assert.equals(len(l:lines), 12)
 endfunction
@@ -151,7 +151,7 @@ function! s:suite.nan_rank_is_invalid() abort
     return
   endif
   let l:lines = webmarks#storage#json#encode(s:sample()).lines
-  let l:lines = map(l:lines, 'substitute(v:val, ''"rank": 3.0000'', ''"rank": NaN'', "")')
+  let l:lines = map(l:lines, 'substitute(v:val, ''"rank": 3.0'', ''"rank": NaN'', "")')
   call s:write(l:lines)
   call s:assert.equals(webmarks#storage#json#load(s:path).code, 'invalid_data')
 endfunction
@@ -318,4 +318,17 @@ function! s:suite.a_directory_in_place_of_the_file() abort
   let l:l = webmarks#storage#json#load(s:path)
   call s:assert.equals(l:l.code, 'load_failed')
   call s:assert.match(l:l.error, 'directory')
+endfunction
+
+function! s:suite.rank_keeps_tiny_and_huge_values() abort
+  let l:d = s:sample()
+  let l:d.bookmarks[0].usage.rank = 0.00004
+  let l:d.bookmarks[1].usage.rank = 1.0e300
+  call webmarks#storage#json#save(s:path, l:d, -1)
+  let l:l = webmarks#storage#json#load(s:path)
+  call s:assert.true(l:l.ok, string(l:l))
+  let l:ranks = map(copy(l:l.data.bookmarks), 'v:val.usage.rank')
+  call s:assert.true(abs(l:ranks[1] - 0.00004) < 1.0e-12, string(l:ranks))
+  call s:assert.true(l:ranks[0] > 0.99e300)
+  call s:assert.equals(type(l:ranks[0]), v:t_float)
 endfunction

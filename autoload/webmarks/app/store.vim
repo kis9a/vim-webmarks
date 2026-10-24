@@ -76,6 +76,13 @@ function! webmarks#app#store#mutate(Fn) abort
     catch /.*/
       return s:err('internal_error', 'internal error: ' . v:exception . ' @ ' . v:throwpoint)
     endtry
+    " the Fn contract: a Result, and the new data when it changed something
+    if type(l:r) != v:t_dict || !has_key(l:r, 'ok')
+      return s:err('internal_error', 'internal error: a change did not return a result')
+    endif
+    if l:r.ok && get(l:r, 'changed', v:true) && type(get(l:r, 'data', 0)) != v:t_dict
+      return s:err('internal_error', 'internal error: a change returned no data')
+    endif
     if !l:r.ok
       return l:r
     endif

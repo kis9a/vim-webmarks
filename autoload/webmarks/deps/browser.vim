@@ -21,7 +21,8 @@ function! webmarks#deps#browser#command() abort
           \ && empty(filter(copy(l:cmd), 'type(v:val) != v:t_string'))
       let l:argv = copy(l:cmd)
     else
-      return s:err('no_browser', 'no browser command found (set g:webmarks_browser_cmd)')
+      return s:err('bad_option', 'invalid g:webmarks_browser_cmd: ' . string(l:cmd)
+            \ . ' (a List like [''firefox'', ''--new-tab''] or an executable name)')
     endif
     if !executable(l:argv[0]) && !s:stubbed()
       return s:err('not_executable', 'command not found: ' . l:argv[0])

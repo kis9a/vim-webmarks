@@ -35,7 +35,7 @@ function! s:suite.missing_executable() abort
   let g:webmarks_browser_cmd = ['webmarks-no-such-browser']
   call s:assert.equals(webmarks#deps#browser#command().code, 'not_executable')
   let g:webmarks_browser_cmd = []
-  call s:assert.equals(webmarks#deps#browser#command().code, 'no_browser')
+  call s:assert.equals(webmarks#deps#browser#command().code, 'bad_option')
 endfunction
 
 function! s:suite.detects_default() abort

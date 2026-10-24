@@ -175,200 +175,222 @@ endfunction
 " Plan and apply in one go against the freshly read {data}; returns the
 " new data (the mutate contract). A line is compared with what was shown
 " (or, for an id that was not shown, with the data before this edit), never
-" with values changed earlier in the loop.
+" with values changed earlier in the loop. The work is shared through one
+" context dict:
+"   orig / work      data before / being changed
+"   orig_b, orig_f   id -> item of orig
+"   at_b, at_f       id -> index into work (no linear scans: an edit of
+"                    1,000 lines would otherwise be quadratic)
+"   id_of            line number -> id (parents come before children)
+"   entry_of         id -> entry
+"   errors, warnings, fetch, counts, shown, now
 function! s:transform(entries, delete_ids, now, shown, data) abort
-  let l:orig = a:data
-  let l:work = deepcopy(a:data)
-  let l:errors = []
-  let l:warnings = []
-  let l:fetch = []
-  let l:counts = {'added': 0, 'renamed': 0, 'moved': 0, 'url_changed': 0,
-        \ 'favorite_changed': 0, 'deleted': 0}
-  let l:id_of = {0: v:null}
-  let l:entry_of = {}
-  " id -> item of the original data / index into l:work (no linear scans:
-  " an edit of 1,000 lines would otherwise be quadratic)
-  let l:orig_b = {}
-  for l:b in l:orig.bookmarks
-    let l:orig_b[l:b.id] = l:b
-  endfor
-  let l:orig_f = {}
-  for l:f in l:orig.folders
-    let l:orig_f[l:f.id] = l:f
-  endfor
-  let l:at_b = {}
-  for l:i in range(len(l:work.bookmarks))
-    let l:at_b[l:work.bookmarks[l:i].id] = l:i
-  endfor
-  let l:at_f = {}
-  for l:i in range(len(l:work.folders))
-    let l:at_f[l:work.folders[l:i].id] = l:i
-  endfor
-
+  let l:ctx = s:context(a:data, a:shown, a:now)
   for l:e0 in a:entries
     let l:e = copy(l:e0)
-    if l:e.id !=# ''
-      let l:exists = has_key(l:e.kind ==# 'folder' ? l:orig_f : l:orig_b, l:e.id)
-      if !l:exists
-        call add(l:warnings, printf('line %d: %s was removed elsewhere; added again as new', l:e.lnum, l:e.id))
-        let l:e.id = ''
-      endif
+    if l:e.id !=# '' && !has_key(l:e.kind ==# 'folder' ? l:ctx.orig_f : l:ctx.orig_b, l:e.id)
+      call add(l:ctx.warnings, printf('line %d: %s was removed elsewhere; added again as new', l:e.lnum, l:e.id))
+      let l:e.id = ''
     endif
-    let l:parent = get(l:id_of, l:e.parent_lnum, v:null)
-
+    let l:parent = get(l:ctx.id_of, l:e.parent_lnum, v:null)
     if l:e.kind ==# 'folder'
-      if l:e.id ==# ''
-        let [l:id, l:work] = webmarks#app#store#next_id(l:work, 'f')
-        let l:r = webmarks#domain#folder#new(l:id, l:e.name, l:parent)
-        if !l:r.ok
-          call s:error(l:errors, l:e.lnum, l:r.code, l:r.error)
-          let l:id_of[l:e.lnum] = l:id
-          continue
-        endif
-        let l:at_f[l:id] = len(l:work.folders)
-        call add(l:work.folders, l:r.folder)
-        let l:counts.added += 1
-      else
-        let l:id = l:e.id
-        let l:before = l:orig_f[l:id]
-        let l:was = get(a:shown, l:id, {'name': l:before.name, 'parent': l:before.parent_id})
-        let l:f = l:work.folders[l:at_f[l:id]]
-        if l:e.name !=# l:was.name
-          let l:r = webmarks#domain#folder#rename(l:f, l:e.name)
-          if !l:r.ok
-            call s:error(l:errors, l:e.lnum, l:r.code, l:r.error)
-          elseif l:r.folder.name !=# l:f.name
-            let l:f = l:r.folder
-            let l:counts.renamed += 1
-          endif
-        endif
-        if !s:same(l:was.parent, l:parent) && !s:same(l:f.parent_id, l:parent)
-          let l:f = webmarks#domain#folder#set_parent(l:f, l:parent).folder
-          let l:counts.moved += 1
-        endif
-        let l:work.folders[l:at_f[l:id]] = l:f
-      endif
-      let l:id_of[l:e.lnum] = l:id
-      let l:entry_of[l:id] = l:e
-      continue
+      call s:apply_folder(l:ctx, l:e, l:parent)
+    else
+      call s:apply_bookmark(l:ctx, l:e, l:parent)
     endif
-
-    " bookmark
-    if l:e.id ==# ''
-      let [l:id, l:work] = webmarks#app#store#next_id(l:work, 'b')
-      let l:r = webmarks#domain#bookmark#new(l:id, l:e.url, l:e.name, l:parent, a:now)
-      if !l:r.ok
-        call s:error(l:errors, l:e.lnum, l:r.code, l:r.error)
-        continue
-      endif
-      let l:b = l:r.bookmark
-      if l:e.favorite
-        let l:b = webmarks#domain#bookmark#toggle_favorite(l:b).bookmark
-      endif
-      let l:at_b[l:id] = len(l:work.bookmarks)
-      call add(l:work.bookmarks, l:b)
-      let l:counts.added += 1
-      if l:b.name_source ==# 'url'
-        call add(l:fetch, {'id': l:id, 'url': l:b.url})
-      endif
-      let l:entry_of[l:id] = l:e
-      continue
-    endif
-    let l:id = l:e.id
-    let l:before = l:orig_b[l:id]
-    let l:was = get(a:shown, l:id, {
-          \ 'name': l:before.name_source ==# 'url' ? '' : l:before.display_name,
-          \ 'url': l:before.url, 'favorite': l:before.is_favorite, 'parent': l:before.folder_id})
-    let l:b = l:work.bookmarks[l:at_b[l:id]]
-    let l:refetch = 0
-    if l:e.url !=# l:was.url && l:e.url !=# l:b.url
-      let l:r = webmarks#domain#bookmark#change_url(l:b, l:e.url)
-      if !l:r.ok
-        call s:error(l:errors, l:e.lnum, l:r.code, l:r.error)
-        continue
-      endif
-      let l:b = l:r.bookmark
-      let l:counts.url_changed += 1
-      let l:refetch = l:b.name_source ==# 'url'
-    endif
-    if l:e.name !=# l:was.name
-      if l:e.name ==# ''
-        if l:b.name_source !=# 'url'
-          " an emptied name: back to the provisional name and fetch a title
-          let l:b = webmarks#domain#bookmark#reset_name(l:b).bookmark
-          let l:counts.renamed += 1
-          let l:refetch = 1
-        endif
-      else
-        let l:r = webmarks#domain#bookmark#rename(l:b, l:e.name)
-        if !l:r.ok
-          call s:error(l:errors, l:e.lnum, l:r.code, l:r.error)
-          continue
-        endif
-        if l:r.bookmark.display_name !=# l:b.display_name || l:b.name_source ==# 'url'
-          let l:b = l:r.bookmark
-          let l:counts.renamed += 1
-          let l:refetch = 0
-        endif
-      endif
-    endif
-    let l:fav = l:e.favorite ? 1 : 0
-    if l:fav != (l:was.favorite ? 1 : 0) && l:fav != (l:b.is_favorite ? 1 : 0)
-      let l:b = webmarks#domain#bookmark#toggle_favorite(l:b).bookmark
-      let l:counts.favorite_changed += 1
-    endif
-    if !s:same(l:was.parent, l:parent) && !s:same(l:b.folder_id, l:parent)
-      let l:b = webmarks#domain#bookmark#move_to(l:b, l:parent).bookmark
-      let l:counts.moved += 1
-    endif
-    if l:refetch
-      call add(l:fetch, {'id': l:id, 'url': l:b.url})
-    endif
-    let l:work.bookmarks[l:at_b[l:id]] = l:b
-    let l:entry_of[l:id] = l:e
   endfor
+  call s:apply_deletes(l:ctx, a:delete_ids)
+  if empty(l:ctx.errors)
+    call s:check_invariants(l:ctx)
+  endif
+  if !empty(l:ctx.errors)
+    return s:failed(l:ctx.errors)
+  endif
+  return {'ok': v:true, 'code': '', 'error': '', 'changed': l:ctx.work != l:ctx.orig,
+        \ 'data': l:ctx.work, 'fetch_title': l:ctx.fetch, 'warnings': l:ctx.warnings,
+        \ 'counts': l:ctx.counts}
+endfunction
 
-  " deletions: bookmarks first, then folders (only what is still there)
+function! s:context(data, shown, now) abort
+  let l:ctx = {'orig': a:data, 'work': deepcopy(a:data), 'shown': a:shown, 'now': a:now,
+        \ 'errors': [], 'warnings': [], 'fetch': [],
+        \ 'counts': {'added': 0, 'renamed': 0, 'moved': 0, 'url_changed': 0,
+        \            'favorite_changed': 0, 'deleted': 0},
+        \ 'id_of': {0: v:null}, 'entry_of': {},
+        \ 'orig_b': {}, 'orig_f': {}, 'at_b': {}, 'at_f': {}}
+  for l:b in a:data.bookmarks
+    let l:ctx.orig_b[l:b.id] = l:b
+  endfor
+  for l:f in a:data.folders
+    let l:ctx.orig_f[l:f.id] = l:f
+  endfor
+  for l:i in range(len(l:ctx.work.bookmarks))
+    let l:ctx.at_b[l:ctx.work.bookmarks[l:i].id] = l:i
+  endfor
+  for l:i in range(len(l:ctx.work.folders))
+    let l:ctx.at_f[l:ctx.work.folders[l:i].id] = l:i
+  endfor
+  return l:ctx
+endfunction
+
+function! s:new_id(ctx, kind) abort
+  let [l:id, a:ctx.work] = webmarks#app#store#next_id(a:ctx.work, a:kind)
+  return l:id
+endfunction
+
+function! s:apply_folder(ctx, e, parent) abort
+  if a:e.id ==# ''
+    let l:id = s:new_id(a:ctx, 'f')
+    let a:ctx.id_of[a:e.lnum] = l:id
+    let l:r = webmarks#domain#folder#new(l:id, a:e.name, a:parent)
+    if !l:r.ok
+      call s:error(a:ctx.errors, a:e.lnum, l:r.code, l:r.error)
+      return
+    endif
+    let a:ctx.at_f[l:id] = len(a:ctx.work.folders)
+    call add(a:ctx.work.folders, l:r.folder)
+    let a:ctx.counts.added += 1
+    let a:ctx.entry_of[l:id] = a:e
+    return
+  endif
+  let l:id = a:e.id
+  let l:before = a:ctx.orig_f[l:id]
+  let l:was = get(a:ctx.shown, l:id, {'name': l:before.name, 'parent': l:before.parent_id})
+  let l:f = a:ctx.work.folders[a:ctx.at_f[l:id]]
+  if a:e.name !=# l:was.name
+    let l:r = webmarks#domain#folder#rename(l:f, a:e.name)
+    if !l:r.ok
+      call s:error(a:ctx.errors, a:e.lnum, l:r.code, l:r.error)
+    elseif l:r.folder.name !=# l:f.name
+      let l:f = l:r.folder
+      let a:ctx.counts.renamed += 1
+    endif
+  endif
+  " only re-parent; depth and cycles are checked once for the whole edit
+  " (one by one, a swap of two folders would look invalid half-way)
+  if !s:same(l:was.parent, a:parent) && !s:same(l:f.parent_id, a:parent)
+    let l:f = webmarks#domain#folder#set_parent(l:f, a:parent).folder
+    let a:ctx.counts.moved += 1
+  endif
+  let a:ctx.work.folders[a:ctx.at_f[l:id]] = l:f
+  let a:ctx.id_of[a:e.lnum] = l:id
+  let a:ctx.entry_of[l:id] = a:e
+endfunction
+
+function! s:apply_bookmark(ctx, e, parent) abort
+  if a:e.id ==# ''
+    let l:id = s:new_id(a:ctx, 'b')
+    let l:r = webmarks#domain#bookmark#new(l:id, a:e.url, a:e.name, a:parent, a:ctx.now)
+    if !l:r.ok
+      call s:error(a:ctx.errors, a:e.lnum, l:r.code, l:r.error)
+      return
+    endif
+    let l:b = l:r.bookmark
+    if a:e.favorite
+      let l:b = webmarks#domain#bookmark#toggle_favorite(l:b).bookmark
+    endif
+    let a:ctx.at_b[l:id] = len(a:ctx.work.bookmarks)
+    call add(a:ctx.work.bookmarks, l:b)
+    let a:ctx.counts.added += 1
+    if l:b.name_source ==# 'url'
+      call add(a:ctx.fetch, {'id': l:id, 'url': l:b.url})
+    endif
+    let a:ctx.entry_of[l:id] = a:e
+    return
+  endif
+  let l:id = a:e.id
+  let l:before = a:ctx.orig_b[l:id]
+  let l:was = get(a:ctx.shown, l:id, {
+        \ 'name': l:before.name_source ==# 'url' ? '' : l:before.display_name,
+        \ 'url': l:before.url, 'favorite': l:before.is_favorite, 'parent': l:before.folder_id})
+  let l:b = a:ctx.work.bookmarks[a:ctx.at_b[l:id]]
+  let l:refetch = 0
+  if a:e.url !=# l:was.url && a:e.url !=# l:b.url
+    let l:r = webmarks#domain#bookmark#change_url(l:b, a:e.url)
+    if !l:r.ok
+      call s:error(a:ctx.errors, a:e.lnum, l:r.code, l:r.error)
+      return
+    endif
+    let l:b = l:r.bookmark
+    let a:ctx.counts.url_changed += 1
+    let l:refetch = l:b.name_source ==# 'url'
+  endif
+  if a:e.name !=# l:was.name
+    if a:e.name ==# ''
+      if l:b.name_source !=# 'url'
+        " an emptied name: back to the provisional name and fetch a title
+        let l:b = webmarks#domain#bookmark#reset_name(l:b).bookmark
+        let a:ctx.counts.renamed += 1
+        let l:refetch = 1
+      endif
+    else
+      let l:r = webmarks#domain#bookmark#rename(l:b, a:e.name)
+      if !l:r.ok
+        call s:error(a:ctx.errors, a:e.lnum, l:r.code, l:r.error)
+        return
+      endif
+      if l:r.bookmark.display_name !=# l:b.display_name || l:b.name_source ==# 'url'
+        let l:b = l:r.bookmark
+        let a:ctx.counts.renamed += 1
+        let l:refetch = 0
+      endif
+    endif
+  endif
+  let l:fav = a:e.favorite ? 1 : 0
+  if l:fav != (l:was.favorite ? 1 : 0) && l:fav != (l:b.is_favorite ? 1 : 0)
+    let l:b = webmarks#domain#bookmark#toggle_favorite(l:b).bookmark
+    let a:ctx.counts.favorite_changed += 1
+  endif
+  if !s:same(l:was.parent, a:parent) && !s:same(l:b.folder_id, a:parent)
+    let l:b = webmarks#domain#bookmark#move_to(l:b, a:parent).bookmark
+    let a:ctx.counts.moved += 1
+  endif
+  if l:refetch
+    call add(a:ctx.fetch, {'id': l:id, 'url': l:b.url})
+  endif
+  let a:ctx.work.bookmarks[a:ctx.at_b[l:id]] = l:b
+  let a:ctx.entry_of[l:id] = a:e
+endfunction
+
+" Bookmarks first, then folders; only what is still there. A folder that
+" still holds something this buffer did not show (added elsewhere) stays.
+function! s:apply_deletes(ctx, delete_ids) abort
   let l:del = {}
   for l:id in a:delete_ids
     let l:del[l:id] = 1
   endfor
-  let l:before_count = len(l:work.bookmarks) + len(l:work.folders)
+  let l:work = a:ctx.work
+  let l:before = len(l:work.bookmarks) + len(l:work.folders)
   call filter(l:work.bookmarks, '!has_key(l:del, v:val.id)')
-  let l:dying = filter(copy(l:work.folders), 'has_key(l:del, v:val.id)')
-  for l:f in l:dying
+  for l:f in filter(copy(l:work.folders), 'has_key(l:del, v:val.id)')
     let l:blocked = !empty(filter(copy(l:work.folders), '!has_key(l:del, v:val.id) && s:same(v:val.parent_id, l:f.id)'))
           \ || !empty(filter(copy(l:work.bookmarks), 's:same(v:val.folder_id, l:f.id)'))
     if l:blocked
-      call s:error(l:errors, 0, 'folder_not_empty',
+      call s:error(a:ctx.errors, 0, 'folder_not_empty',
             \ 'folder is not empty: ' . l:f.name . ' (it has items that are not in this buffer; :e! to see them)')
     endif
   endfor
   call filter(l:work.folders, '!has_key(l:del, v:val.id)')
-  let l:counts.deleted = l:before_count - len(l:work.bookmarks) - len(l:work.folders)
+  let a:ctx.counts.deleted = l:before - len(l:work.bookmarks) - len(l:work.folders)
+endfunction
 
-  if empty(l:errors)
-    let l:v = webmarks#domain#folder#validate_all(l:work.folders, l:work.bookmarks)
-    if !l:v.ok
-      call s:error(l:errors, s:lnum_in(l:v.error, l:entry_of), l:v.code, l:v.error)
+" The folder invariants (H1..H5) and URL uniqueness over the result.
+function! s:check_invariants(ctx) abort
+  let l:work = a:ctx.work
+  let l:v = webmarks#domain#folder#validate_all(l:work.folders, l:work.bookmarks)
+  if !l:v.ok
+    call s:error(a:ctx.errors, s:lnum_in(l:v.error, a:ctx.entry_of), l:v.code, l:v.error)
+  endif
+  " the find_duplicate rule (exact match), indexed by URL
+  let l:owner = {}
+  for l:b in l:work.bookmarks
+    if has_key(l:owner, l:b.url)
+      let l:e = get(a:ctx.entry_of, l:b.id, get(a:ctx.entry_of, l:owner[l:b.url], {'lnum': 0}))
+      call s:error(a:ctx.errors, l:e.lnum, 'duplicate_url', 'already registered: ' . l:b.url)
+    else
+      let l:owner[l:b.url] = l:b.id
     endif
-    " the find_duplicate rule (exact match), indexed by URL
-    let l:owner = {}
-    for l:b in l:work.bookmarks
-      if has_key(l:owner, l:b.url)
-        let l:e = get(l:entry_of, l:b.id, get(l:entry_of, l:owner[l:b.url], {'lnum': 0}))
-        call s:error(l:errors, l:e.lnum, 'duplicate_url', 'already registered: ' . l:b.url)
-      else
-        let l:owner[l:b.url] = l:b.id
-      endif
-    endfor
-  endif
-
-  if !empty(l:errors)
-    return s:failed(l:errors)
-  endif
-  return {'ok': v:true, 'code': '', 'error': '', 'changed': l:work != l:orig,
-        \ 'data': l:work, 'fetch_title': l:fetch, 'warnings': l:warnings, 'counts': l:counts}
+  endfor
 endfunction
 
 " The line of the item an invariant message names, else 0.

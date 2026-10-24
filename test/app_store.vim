@@ -135,3 +135,16 @@ function! s:suite.next_id_shared_counter() abort
   let [l:b, l:d] = webmarks#app#store#next_id(l:d, 'f')
   call s:assert.equals([l:a, l:b, l:d.next_id], ['b1', 'f2', 3])
 endfunction
+
+function! s:not_a_result(data) abort
+  return 'oops'
+endfunction
+
+function! s:no_data(data) abort
+  return {'ok': v:true, 'code': '', 'error': '', 'changed': v:true}
+endfunction
+
+function! s:suite.a_broken_change_function_is_internal_error() abort
+  call s:assert.equals(webmarks#app#store#mutate(function('s:not_a_result')).code, 'internal_error')
+  call s:assert.equals(webmarks#app#store#mutate(function('s:no_data')).code, 'internal_error')
+endfunction
