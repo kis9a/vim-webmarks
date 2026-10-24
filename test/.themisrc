@@ -1,0 +1,31 @@
+scriptencoding utf-8
+" Shared test setup: runtimepath and helpers available to every suite.
+let s:root = fnamemodify(expand('<sfile>:p:h:h'), ':p')
+execute 'set runtimepath^=' . fnameescape(s:root)
+set nomore
+set encoding=utf-8
+
+" Wait until Pred() is true, sleeping 10 ms at a time. ':sleep' lets job
+" callbacks run in both Vim and Neovim. Returns the final Pred() value.
+function! WebmarksTestWaitUntil(Pred, timeout_ms) abort
+  let l:start = reltime()
+  while !a:Pred() && reltimefloat(reltime(l:start)) * 1000 < a:timeout_ms
+    sleep 10m
+  endwhile
+  return a:Pred()
+endfunction
+
+" Fresh isolated environment: data file in a new temp dir, fixed clock,
+" every webmarks option unset. Returns the temp dir.
+function! WebmarksTestReset() abort
+  for l:name in keys(g:)
+    if l:name =~# '^webmarks_'
+      execute 'unlet! g:' . l:name
+    endif
+  endfor
+  let l:dir = tempname()
+  call mkdir(l:dir, 'p')
+  let g:webmarks_file = l:dir . '/bookmarks.json'
+  let g:webmarks_test = {'now': 1700000000}
+  return l:dir
+endfunction
