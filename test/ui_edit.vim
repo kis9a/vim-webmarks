@@ -292,3 +292,42 @@ function! s:suite.reload_bang_shows_what_is_on_disk() abort
   edit!
   call s:assert.equals(getline(1, '$'), ['  Alpha', '  Zed', 'Dev/', '    Guide'])
 endfunction
+
+" The marker is hidden in Insert mode too; A, $ and <End> stop before it.
+function! s:suite.end_keys_stop_before_the_marker() abort
+  call s:edit()
+  call s:assert.equals(&l:concealcursor, 'nci')
+  call s:assert.equals(maparg('A', 'n'), 'webmarks#ui#tree#_edit_key("A")')
+  1
+  execute "normal A/x\<Esc>"
+  call s:assert.equals(getline(1), '  Alpha  https://a.example/x' . s:m('b1'))
+  2
+  execute "normal 0i\<End>\<BS>s/\<Esc>"
+  call s:assert.equals(getline(2), 'Devs/' . s:m('f2'))
+  call setline(3, '    ガイド  https://g.example' . s:m('b3'))
+  3
+  normal! 0
+  normal $
+  call s:assert.equals(col('.'), stridx(getline(3), s:m('b3')))
+  " a count keeps the built-in key; so does a line without a marker
+  call append('$', '    https://n.example')
+  normal G
+  execute "normal A/n\<Esc>"
+  call s:assert.equals(getline('$'), '    https://n.example/n')
+  write
+  call s:assert.equals(b:webmarks.mode, 'view')
+  call s:assert.equals(maparg('A', 'n'), '<Plug>(webmarks-add-folder)')
+  call s:assert.equals(maparg('$', 'n'), '')
+  call s:assert.equals(maparg('<End>', 'i'), '')
+endfunction
+
+function! s:suite.end_keys_leave_a_buffer_mapping_of_the_user_alone() abort
+  Webmarks
+  nnoremap <buffer> $ g_
+  normal i
+  call s:assert.equals(maparg('$', 'n'), 'g_')
+  call s:assert.equals(maparg('<End>', 'i'), 'webmarks#ui#tree#_edit_key("end")')
+  edit!
+  call s:assert.equals(maparg('$', 'n'), 'g_')
+  call s:assert.equals(maparg('<End>', 'i'), '')
+endfunction

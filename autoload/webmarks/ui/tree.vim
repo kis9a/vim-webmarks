@@ -243,7 +243,7 @@ function! s:apply_window_options() abort
     setlocal foldmethod=manual
     silent! normal! zE
     if l:want ==# 'edit'
-      setlocal conceallevel=2 concealcursor=nc
+      setlocal conceallevel=2 concealcursor=nci
     else
       setlocal conceallevel=0
     endif
@@ -956,7 +956,8 @@ function! s:do_help() abort
     call add(l:lines, printf('  %-14s %s', l:key, l:desc))
   endfor
   if l:editing
-    call extend(l:lines, ['  :w             apply the changes', '  :e!            discard the changes'])
+    call extend(l:lines, ['  A $ <End>      stop before the hidden id',
+          \ '  :w             apply the changes', '  :e!            discard the changes'])
   endif
   if !empty(filter(copy(b:webmarks.mappings), 'v:val[0] =~# "^<Leader>"'))
     let l:leader = get(g:, 'mapleader', '\')
@@ -1006,10 +1007,66 @@ function! webmarks#ui#tree#enter_edit() abort
   for l:m in b:webmarks.edit.mappings
     execute 'silent! nunmap <buffer>' l:m[0]
   endfor
+  call s:edit_keys_on()
   " setline() sets 'modified' even for identical text
   setlocal nomodified
   echo '-- WEBMARKS EDIT -- :w to apply, :e! to discard'
   return s:ok()
+endfunction
+
+" The marker is hidden in Insert mode too, so keys that go to the end of
+" the line stop before it: text typed after the marker is a parse error.
+" [mode, lhs, rhs]; a buffer-local mapping of the user is left alone.
+let s:edit_keys = [
+      \ ['n', 'A', 'webmarks#ui#tree#_edit_key("A")'],
+      \ ['n', '$', 'webmarks#ui#tree#_edit_key("$")'],
+      \ ['i', '<End>', 'webmarks#ui#tree#_edit_key("end")'],
+      \ ]
+
+function! s:edit_keys_on() abort
+  let b:webmarks.edit.keys = []
+  for [l:mode, l:lhs, l:rhs] in s:edit_keys
+    if get(maparg(l:lhs, l:mode, 0, 1), 'buffer', 0)
+      continue
+    endif
+    execute l:mode . 'noremap <buffer><silent><expr>' l:lhs l:rhs
+    call add(b:webmarks.edit.keys, [l:mode, l:lhs])
+  endfor
+endfunction
+
+function! s:edit_keys_off() abort
+  for [l:mode, l:lhs] in get(b:webmarks.edit, 'keys', [])
+    execute 'silent!' l:mode . 'unmap <buffer>' l:lhs
+  endfor
+  let b:webmarks.edit.keys = []
+endfunction
+
+" Byte index of the marker (with its blank) in the current line, or -1.
+function! s:marker_col() abort
+  return match(getline('.'), webmarks#app#listing#marker_pattern() . '$')
+endfunction
+
+" <expr> mapping for A, $ and <End> ("end"): keys that stop before the marker.
+function! webmarks#ui#tree#_edit_key(key) abort
+  let l:i = s:marker_col()
+  if a:key ==# 'end'
+    if l:i < 0
+      return "\<End>"
+    endif
+    let l:n = strchars(getline('.')[l:i :])
+    return "\<End>" . repeat("\<C-g>U\<Left>", l:n)
+  endif
+  " with a count, or no marker, keep the built-in key
+  if v:count > 0 || l:i < 0
+    return a:key
+  endif
+  if l:i == 0
+    return a:key ==# 'A' ? '0i' : '0'
+  endif
+  " the last character before the marker
+  let l:last = l:i - strlen(matchstr(getline('.')[: l:i - 1], '.$'))
+  let l:vcol = virtcol([line('.'), l:last + 1])
+  return a:key ==# 'A' ? l:vcol . '|a' : l:vcol . '|'
 endfunction
 
 " Edit-mode window settings for the current window.
@@ -1040,6 +1097,7 @@ function! webmarks#ui#tree#leave_edit() abort
     call win_execute(l:winid, 'call s:edit_window_off()')
   endfor
   setlocal undolevels=-1 nomodifiable expandtab< shiftwidth< softtabstop<
+  call s:edit_keys_off()
   " map back exactly what enter_edit() removed, with the same keys
   for l:m in b:webmarks.edit.mappings
     call s:map(l:m)

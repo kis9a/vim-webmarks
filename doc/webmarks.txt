@@ -232,6 +232,12 @@ tabs ('expandtab' and 'shiftwidth' 2 are set, so |>>| and |<<| work).
 |:e!|	discard the edits, read the file again and go back to the view mode.
 q	leave edit mode if nothing was changed; otherwise warn.
 ?	list the keys of edit mode.
+A  $	Normal mode: stop before the id marker, which stays hidden in
+<End>	Insert mode as well (Insert mode). With a count, or on a line
+	without a marker, they work as usual. A buffer-local mapping of
+	your own for these keys is kept. Other ways to the end of the line
+	(`g_`, `<Right>`) can still pass the hidden marker; text after it is
+	an error on |:w|.
 
 Mappings: the default keys are removed while editing (except `q`) and
 come back afterwards. Your own FileType mappings stay; check
